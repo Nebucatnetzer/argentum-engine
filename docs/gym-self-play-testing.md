@@ -149,13 +149,17 @@ complex decisions go to `POST /envs/{id}/decision` (section 5).
 
 Each legal action also lists what its cost and targets need:
 
-- `targetRequirements[]` — one entry per target requirement (`index`, `description`, `minTargets`,
-  `maxTargets`, `legalTargets`). When there is more than one, send the choice as
-  `params.targetGroups` — one list per requirement, in order — instead of `targets`.
+- `targetRequirements[]` — filled only when the action has more than one target requirement:
+  one entry each (`index`, `description`, `minTargets`, `maxTargets`, `legalTargets`). Send that
+  choice as `params.targetGroups` — one list per requirement, in order — instead of `targets`. A
+  single-requirement action keeps using `targetEntityIds` / `minTargets` / `maxTargets` and `targets`.
 - `costChoices[]` — each entry names the `params` field that carries it (`sacrifice`, `tap`,
-  `discard`, `exile`, `bounce`, `crew`), its `candidates`, and how many to pick (`min`..`max`).
-  For crew and other tap-for-power costs, `contribution` gives each creature's value and the picks
-  must add up to at least `minTotal`. Craft materials go in `exile`.
+  `discard`, `exile`, `bounce`, `variablePermanents`, `crew`, `saddle`), its `candidates`, and how
+  many to pick (`min`..`max`). When `contribution` is non-empty (crew, saddle, Teamwork, collect
+  evidence) it gives each candidate's value and the picks must add up to at least `minTotal`. Craft
+  materials go in `exile`; "sacrifice any number of …" and Teamwork go in `variablePermanents`.
+  Costs `params` can't carry — casualty, conspire, behold, reveal, blight, counter removal — get no
+  entry.
 
 ```json
 { "actionId": 14, "params": { "crew": ["<creatureId>"] } }

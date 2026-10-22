@@ -335,14 +335,17 @@ data class LegalActionView(
     /** True when this entry was generated from [PendingDecisionView], not a GameAction. */
     val isDecisionOption: Boolean = false,
     /**
-     * One entry per target requirement, for actions with targets. A spell with several requirements
-     * ("target creature you control … target creature an opponent controls") takes its choice as
-     * `ActionParams.targetGroups`, one list per entry in this order; [targetEntityIds] only covers the first.
+     * One entry per target requirement, populated only for actions with more than one ("target
+     * creature you control … target creature an opponent controls"); a single-requirement action
+     * leaves it empty and describes its one requirement through [targetEntityIds], [minTargets] and
+     * [maxTargets]. A multi-requirement choice goes in `ActionParams.targetGroups`, one list per
+     * entry in this order.
      */
     val targetRequirements: List<TargetRequirementView> = emptyList(),
     /**
      * Choices the cost needs before the action can be taken — what to sacrifice, tap, discard, exile
-     * or bounce, or which creatures crew. Each entry names the `ActionParams` field that carries it.
+     * or bounce, or which creatures crew or saddle. Each entry names the `ActionParams` field that
+     * carries it.
      */
     val costChoices: List<CostChoiceView> = emptyList()
 )
@@ -406,9 +409,9 @@ data class TargetRequirementView(
 
 /**
  * One choice an action's cost needs. Send the chosen ids as the `ActionParams` field named by [param]
- * (`sacrifice`, `tap`, `discard`, `exile`, `bounce` or `crew`), between [min] and [max] of them. For
- * crew and other tap-for-power costs, [contribution] gives what each candidate counts for and the
- * chosen ones must add up to at least [minTotal].
+ * (`sacrifice`, `tap`, `discard`, `exile`, `bounce`, `variablePermanents`, `crew` or `saddle`), between
+ * [min] and [max] of them. When [contribution] is non-empty (crew, saddle, Teamwork, collect evidence)
+ * it gives what each candidate counts for, and the chosen ones must add up to at least [minTotal].
  */
 @Serializable
 data class CostChoiceView(

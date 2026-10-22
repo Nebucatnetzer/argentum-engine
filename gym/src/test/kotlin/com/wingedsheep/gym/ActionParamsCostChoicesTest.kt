@@ -7,6 +7,7 @@ import com.wingedsheep.engine.core.CastSpell
 import com.wingedsheep.engine.core.CrewVehicle
 import com.wingedsheep.engine.core.GameConfig
 import com.wingedsheep.engine.core.PlayerConfig
+import com.wingedsheep.engine.core.SaddleMount
 import com.wingedsheep.engine.registry.CardRegistry
 import com.wingedsheep.engine.state.components.stack.ChosenTarget
 import com.wingedsheep.mtg.sets.definitions.por.PortalSet
@@ -55,6 +56,25 @@ class ActionParamsCostChoicesTest : FunSpec({
         val template = CrewVehicle(alice, EntityId("vehicle"), emptyList())
         val completed = ActionParameterizer.apply(template, ActionParams(crew = listOf(fodderA, fodderB)), env.state)
         (completed as CrewVehicle).crewCreatures shouldContainExactly listOf(fodderA, fodderB)
+    }
+
+    test("saddle fills the mount's saddle creatures") {
+        val env = newEnv()
+        val alice = env.playerIds[0]
+        val template = SaddleMount(alice, EntityId("mount"), emptyList())
+        val completed = ActionParameterizer.apply(template, ActionParams(saddle = listOf(fodderA)), env.state)
+        (completed as SaddleMount).saddleCreatures shouldContainExactly listOf(fodderA)
+    }
+
+    test("variable permanents fill the variable-count cost slot") {
+        val env = newEnv()
+        val alice = env.playerIds[0]
+        val completed = ActionParameterizer.apply(
+            CastSpell(alice, card),
+            ActionParams(variablePermanents = listOf(fodderA, fodderB)),
+            env.state
+        ) as CastSpell
+        completed.additionalCostPayment!!.variableCostPermanents shouldBe listOf(fodderA, fodderB)
     }
 
     test("crew is refused by a spell") {

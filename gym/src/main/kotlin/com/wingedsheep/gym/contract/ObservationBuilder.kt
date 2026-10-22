@@ -14,6 +14,7 @@ import com.wingedsheep.engine.core.ChooseOptionDecision
 import com.wingedsheep.engine.core.ChooseReplacementDecision
 import com.wingedsheep.engine.core.ChooseTargetsDecision
 import com.wingedsheep.engine.core.ColorChosenResponse
+import com.wingedsheep.engine.core.CrewVehicle
 import com.wingedsheep.engine.core.CombatResolutionDecision
 import com.wingedsheep.engine.core.DecisionResponse
 import com.wingedsheep.engine.core.DistributeDecision
@@ -24,12 +25,15 @@ import com.wingedsheep.engine.core.OrderObjectsDecision
 import com.wingedsheep.engine.core.OrderTriggersDecision
 import com.wingedsheep.engine.core.PendingDecision
 import com.wingedsheep.engine.core.ReorderLibraryDecision
+import com.wingedsheep.engine.core.SaddleMount
 import com.wingedsheep.engine.core.SearchLibraryDecision
 import com.wingedsheep.engine.core.SelectCardsDecision
 import com.wingedsheep.engine.core.SelectManaSourcesDecision
 import com.wingedsheep.engine.core.SplitPilesDecision
 import com.wingedsheep.engine.core.YesNoDecision
 import com.wingedsheep.engine.core.YesNoResponse
+import com.wingedsheep.engine.handlers.costs.CollectEvidenceResolver
+import com.wingedsheep.engine.handlers.costs.GraveyardTotalExileResolver
 import com.wingedsheep.engine.legalactions.AdditionalCostData
 import com.wingedsheep.engine.legalactions.LegalAction
 import com.wingedsheep.engine.registry.CardRegistry
@@ -450,56 +454,31 @@ class ObservationBuilder(
 
     /**
      * The cost choices [la] needs completed through `ActionParams`, flattened from the engine's
-     * [AdditionalCostData] (and its `alsoRequired` parts) plus crew / tap-for-power costs.
+     * [AdditionalCostData] (and its `alsoRequired` parts) plus crew / saddle costs.
+     *
+     * Keyed on [AdditionalCostData.costType], not on which candidate list is populated: the same
+     * list feeds different payment channels and bounds depending on the cost ("sacrifice any number"
+     * pays through `variableCostPermanents`, a cost-reduction sacrifice may pick none). The mapping
+     * mirrors the web client's. Cost types `ActionParams` can't carry (casualty, conspire, behold,
+     * reveal, blight, counter removal, …) are left out rather than advertised under a field the
+     * engine wouldn't read.
      */
     private fun costChoiceViews(la: LegalAction): List<CostChoiceView> = buildList {
         fun addFrom(info: AdditionalCostData) {
-            val d = info.description
-            if (info.validSacrificeTargets.isNotEmpty()) {
-                add(CostChoiceView("sacrifice", d, info.validSacrificeTargets, info.sacrificeCount, info.sacrificeCount))
-            }
-            if (info.validTapTargets.isNotEmpty()) {
-                add(CostChoiceView("tap", d, info.validTapTargets, info.tapCount, info.tapCount))
-            }
-            if (info.validDiscardTargets.isNotEmpty()) {
-                add(CostChoiceView("discard", d, info.validDiscardTargets, info.discardCount, info.discardCount))
-            }
-            if (info.validBounceTargets.isNotEmpty()) {
-                add(CostChoiceView("bounce", d, info.validBounceTargets, info.bounceCount, info.bounceCount))
-            }
-            if (info.validExileTargets.isNotEmpty()) {
-                add(
-                    CostChoiceView(
-                        "exile", d, info.validExileTargets, info.exileMinCount, info.exileMaxCount,
-                        contribution = info.exileCardWeights, minTotal = info.exileMinTotalWeight
-                    )
-                )
-            }
-            if (info.validCraftMaterials.isNotEmpty()) {
-                add(
-                    CostChoiceView(
-                        "exile", d, info.validCraftMaterials, info.craftMinCount,
-                        info.craftMaxCount ?: info.validCraftMaterials.size
-                    )
-                )
-            }
-            if (info.tapForPowerCreatures.isNotEmpty()) {
-                add(
-                    CostChoiceView(
-                        "tap", d, info.tapForPowerCreatures.map { it.entityId }, 1, info.tapForPowerCreatures.size,
-                        contribution = info.tapForPowerCreatures.associate { it.entityId to it.power },
-                        minTotal = info.tapForPowerRequired
-                    )
-                )
-            }
+            costChoiceView(info)?.let(::add)
             info.alsoRequired.forEach(::addFrom)
         }
         la.additionalCostInfo?.let(::addFrom)
         val crewLike = la.tapForPowerCreatures.orEmpty()
-        if (la.tapForPower && crewLike.isNotEmpty()) {
+        val param = when (la.action) {
+            is CrewVehicle -> "crew"
+            is SaddleMount -> "saddle"
+            else -> null
+        }
+        if (la.tapForPower && param != null && crewLike.isNotEmpty()) {
             add(
                 CostChoiceView(
-                    param = if (la.action is com.wingedsheep.engine.core.CrewVehicle) "crew" else "tap",
+                    param = param,
                     description = la.description,
                     candidates = crewLike.map { it.entityId },
                     min = 1,
@@ -508,6 +487,47 @@ class ObservationBuilder(
                     minTotal = la.tapForPowerRequired ?: 0
                 )
             )
+        }
+    }
+
+    private fun costChoiceView(info: AdditionalCostData): CostChoiceView? {
+        val d = info.description
+        return when (info.costType) {
+            "SacrificePermanent", "SacrificeSelf" -> info.validSacrificeTargets.takeIf { it.isNotEmpty() }
+                ?.let { CostChoiceView("sacrifice", d, it, info.sacrificeCount, info.sacrificeCount) }
+            "SacrificeForCostReduction" -> info.validSacrificeTargets.takeIf { it.isNotEmpty() }
+                ?.let { CostChoiceView("sacrifice", d, it, 0, it.size) }
+            "SacrificeVariable" -> info.validSacrificeTargets.takeIf { it.isNotEmpty() }
+                ?.let { CostChoiceView("variablePermanents", d, it, info.sacrificeCount, it.size) }
+            // tapCount 0 is the "tap X" sentinel: the count is the chosen X, not known here.
+            "TapPermanents" -> info.validTapTargets.takeIf { it.isNotEmpty() }?.let {
+                if (info.tapCount == 0) CostChoiceView("tap", d, it, 0, it.size)
+                else CostChoiceView("tap", d, it, info.tapCount, info.tapCount)
+            }
+            "TapForCostReduction" -> info.validTapTargets.takeIf { it.isNotEmpty() }
+                ?.let { CostChoiceView("tap", d, it, 0, it.size) }
+            "TapForTotalPower" -> info.tapForPowerCreatures.takeIf { it.isNotEmpty() }?.let { creatures ->
+                CostChoiceView(
+                    "variablePermanents", d, creatures.map { it.entityId }, 0, creatures.size,
+                    contribution = creatures.associate { it.entityId to it.power },
+                    minTotal = info.tapForPowerRequired
+                )
+            }
+            "DiscardCard" -> info.validDiscardTargets.takeIf { it.isNotEmpty() }
+                ?.let { CostChoiceView("discard", d, it, info.discardCount, info.discardCount) }
+            "BouncePermanent" -> info.validBounceTargets.takeIf { it.isNotEmpty() }
+                ?.let { CostChoiceView("bounce", d, it, info.bounceCount, info.bounceCount) }
+            "ExileFromGraveyard", "ExileFromHand", CollectEvidenceResolver.COST_TYPE, GraveyardTotalExileResolver.COST_TYPE ->
+                info.validExileTargets.takeIf { it.isNotEmpty() }?.let {
+                    CostChoiceView(
+                        "exile", d, it, info.exileMinCount, info.exileMaxCount,
+                        contribution = info.exileCardWeights, minTotal = info.exileMinTotalWeight
+                    )
+                }
+            "Craft" -> info.validCraftMaterials.takeIf { it.isNotEmpty() }?.let {
+                CostChoiceView("exile", d, it, info.craftMinCount, info.craftMaxCount ?: it.size)
+            }
+            else -> null
         }
     }
 

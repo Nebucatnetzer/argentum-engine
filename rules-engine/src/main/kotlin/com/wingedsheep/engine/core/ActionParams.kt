@@ -40,9 +40,12 @@ import kotlinx.serialization.Serializable
  * @property sacrifice Permanents sacrificed to pay an additional cost.
  * @property discard Cards discarded to pay an additional cost.
  * @property exile Cards exiled to pay an additional cost, craft materials included.
- * @property tap Permanents tapped to pay a "tap N untapped …" or tap-for-power cost.
+ * @property tap Permanents tapped to pay a "tap N untapped …" cost.
  * @property bounce Permanents returned to hand to pay an additional cost.
+ * @property variablePermanents Permanents chosen for a variable-count cost whose count is the payer's
+ *   choice — "sacrifice any number of Spirits", or Teamwork's "tap creatures with total power N".
  * @property crew Creatures tapped to crew a vehicle.
+ * @property saddle Creatures tapped to saddle a mount.
  */
 @Serializable
 data class ActionParams(
@@ -56,7 +59,9 @@ data class ActionParams(
     val exile: List<EntityId> = emptyList(),
     val tap: List<EntityId> = emptyList(),
     val bounce: List<EntityId> = emptyList(),
-    val crew: List<EntityId> = emptyList()
+    val variablePermanents: List<EntityId> = emptyList(),
+    val crew: List<EntityId> = emptyList(),
+    val saddle: List<EntityId> = emptyList()
 ) {
     val isEmpty: Boolean
         get() = populatedFields.isEmpty()
@@ -74,7 +79,9 @@ data class ActionParams(
             if (exile.isNotEmpty()) add("exile")
             if (tap.isNotEmpty()) add("tap")
             if (bounce.isNotEmpty()) add("bounce")
+            if (variablePermanents.isNotEmpty()) add("variablePermanents")
             if (crew.isNotEmpty()) add("crew")
+            if (saddle.isNotEmpty()) add("saddle")
         }
 
     companion object {
@@ -132,6 +139,11 @@ object ActionParameterizer {
                 action.copy(crewCreatures = params.crew)
             }
 
+            is SaddleMount -> {
+                params.allowOnly(action, "saddle")
+                action.copy(saddleCreatures = params.saddle)
+            }
+
             else -> throw IllegalArgumentException(
                 "Action ${action::class.simpleName} takes no step params; got $params"
             )
@@ -159,7 +171,7 @@ object ActionParameterizer {
     }
 
     /** The [ActionParams] fields that fill an [AdditionalCostPayment]. */
-    private val COST_FIELDS = arrayOf("sacrifice", "discard", "exile", "tap", "bounce")
+    private val COST_FIELDS = arrayOf("sacrifice", "discard", "exile", "tap", "bounce", "variablePermanents")
 
     /** Resolved targets and, for [ActionParams.targetGroups], the per-requirement counts; nulls keep the template's. */
     private fun ActionParams.chosenTargets(state: GameState): Pair<List<ChosenTarget>?, List<Int>?> {
@@ -176,7 +188,9 @@ object ActionParameterizer {
 
     /** Fold the cost-choice fields into [existing], leaving any field the caller didn't send as it was. */
     private fun ActionParams.costPayment(existing: AdditionalCostPayment?): AdditionalCostPayment? {
-        if (sacrifice.isEmpty() && discard.isEmpty() && exile.isEmpty() && tap.isEmpty() && bounce.isEmpty()) {
+        if (sacrifice.isEmpty() && discard.isEmpty() && exile.isEmpty() && tap.isEmpty() && bounce.isEmpty() &&
+            variablePermanents.isEmpty()
+        ) {
             return existing
         }
         val base = existing ?: AdditionalCostPayment()
@@ -185,7 +199,8 @@ object ActionParameterizer {
             discardedCards = discard.ifEmpty { base.discardedCards },
             exiledCards = exile.ifEmpty { base.exiledCards },
             tappedPermanents = tap.ifEmpty { base.tappedPermanents },
-            bouncedPermanents = bounce.ifEmpty { base.bouncedPermanents }
+            bouncedPermanents = bounce.ifEmpty { base.bouncedPermanents },
+            variableCostPermanents = variablePermanents.ifEmpty { null } ?: base.variableCostPermanents
         )
     }
 
