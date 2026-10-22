@@ -1139,7 +1139,8 @@ object Steps {
      * script takes the amount alone, and this sentence's script takes the amount and the filter — so
      * sharing the shape would mean parameterizing it over an arity nothing else needs. What is
      * shared is what matters: one `scriptFor`, one reconstruction, and the same domain split
-     * (`Fixed` is the numeral, everything else is the clause).
+     * (`Fixed` is the numeral, the literal X is `XValue` — [xDamageSteps]' noun-phrase sibling —
+     * and everything else is the clause).
      */
     private val damageToTargetPermanent: List<Phrase<CardScript>> = run {
         fun scriptFor(
@@ -1207,6 +1208,25 @@ object Steps {
                 }
             }
         } + listOf(
+            phrase<CardScript>(
+                "{self} deals X damage to target {filter}",
+                name = "deals X damage to target permanent",
+            ) {
+                slot("self", Primitives.self)
+                slot("filter", Filters.filter)
+
+                build {
+                    scriptFor(bare, DynamicAmount.XValue, it.value("filter"))
+                }
+
+                match { script ->
+                    val (_, filter) = readBack(bare, script) {
+                        it == DynamicAmount.XValue
+                    } ?: return@match null
+
+                    bind("self" to Unit, "filter" to filter)
+                }
+            },
             clause(
                 "{self} deals damage to target {filter} equal to {amount}",
                 "deals damage to target permanent, by a count",
