@@ -27,6 +27,25 @@ data class TapUntapEffect(
 }
 
 /**
+ * "This permanent enters tapped" — the rider of an as-enters replacement, run inside
+ * [com.wingedsheep.sdk.scripting.OnEnterRun]: the reveal lands' "if you don't, this land enters
+ * tapped" (Auntie's Hovel, Game Trail, the snarls), Multiversal Passage's "if you don't [pay 2
+ * life], it enters tapped".
+ *
+ * An entry modification, not a tap. The permanent is put onto the battlefield tapped as part of
+ * the entry event, so no "becomes tapped" event is emitted, and a "[permanents] enter untapped"
+ * replacement (The Wandering Minstrel, Spelunking) wins and the permanent stays untapped
+ * (CR 616.1 — its controller orders the two replacements, and untapped is the only outcome worth
+ * choosing). [TapUntapEffect] on `EffectTarget.Self` does neither.
+ */
+@SerialName("EnterTapped")
+@Serializable
+data object EnterTappedEffect : Effect, SelfReferentialDescription {
+    override val descriptionTemplate: String = "${EffectTarget.Self.selfNounToken} enters tapped"
+    override val description: String get() = defaultResolvedDescription
+}
+
+/**
  * Tap or untap all entities in a named collection.
  * Used for effects that let a player choose permanents to tap/untap from a selection.
  * "Untap up to two lands" (after Gather → Select → TapUntapCollection)

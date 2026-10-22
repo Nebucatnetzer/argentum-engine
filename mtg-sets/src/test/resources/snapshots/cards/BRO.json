@@ -5292,10 +5292,7 @@
                     "then": {
                         "type": "MayRevealCardFromHand",
                         "filter": "Soldier",
-                        "otherwise": {
-                            "type": "TapUntap",
-                            "target": "Self"
-                        }
+                        "otherwise": "EnterTapped"
                     }
                 }
             }

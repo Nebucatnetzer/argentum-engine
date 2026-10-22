@@ -8,7 +8,6 @@ import com.wingedsheep.sdk.scripting.AbilityCost
 import com.wingedsheep.sdk.scripting.GameObjectFilter
 import com.wingedsheep.sdk.scripting.OnEnterRun
 import com.wingedsheep.sdk.scripting.TimingRule
-import com.wingedsheep.sdk.scripting.targets.EffectTarget
 
 /**
  * Wanderwine Hub
@@ -39,7 +38,7 @@ val WanderwineHub = card("Wanderwine Hub") {
         OnEnterRun(
             Effects.MayRevealCardFromHand(
                 filter = GameObjectFilter.Any.withSubtype("Merfolk"),
-                otherwise = Effects.Tap(EffectTarget.Self),
+                otherwise = Effects.EnterTapped(),
             )
         )
     )

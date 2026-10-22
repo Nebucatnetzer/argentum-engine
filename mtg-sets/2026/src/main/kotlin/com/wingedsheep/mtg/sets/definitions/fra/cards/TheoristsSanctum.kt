@@ -7,7 +7,6 @@ import com.wingedsheep.sdk.dsl.card
 import com.wingedsheep.sdk.model.Rarity
 import com.wingedsheep.sdk.scripting.GameObjectFilter
 import com.wingedsheep.sdk.scripting.OnEnterRun
-import com.wingedsheep.sdk.scripting.targets.EffectTarget
 
 /**
  * Theorist's Sanctum
@@ -35,7 +34,7 @@ val TheoristsSanctum = card("Theorist's Sanctum") {
         OnEnterRun(
             Effects.Behold(
                 filter = GameObjectFilter.Any.withSubtype("Jace"),
-                otherwise = Effects.Tap(EffectTarget.Self),
+                otherwise = Effects.EnterTapped(),
             )
         )
     )

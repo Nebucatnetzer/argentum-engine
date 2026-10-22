@@ -5678,10 +5678,7 @@
                                 "type": "Composite",
                                 "effects": []
                             },
-                            "otherwise": {
-                                "type": "TapUntap",
-                                "target": "Self"
-                            }
+                            "otherwise": "EnterTapped"
                         }
                     ]
                 }

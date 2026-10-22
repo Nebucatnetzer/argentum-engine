@@ -1305,10 +1305,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "land Island|Swamp",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]
@@ -2472,10 +2469,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "land Swamp|Mountain",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]
@@ -2638,10 +2632,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "land Mountain|Forest",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]

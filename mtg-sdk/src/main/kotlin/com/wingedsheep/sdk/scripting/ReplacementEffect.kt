@@ -570,7 +570,7 @@ data class RedirectZoneChange(
  *
  * Use this to compose ETB-time choices out of existing atoms — e.g. SOI shadow
  * lands wrap [com.wingedsheep.sdk.scripting.effects.MayRevealCardFromHandEffect]
- * with `otherwise = Effects.Tap(EffectTarget.Self)`; a future "as ~ enters,
+ * with `otherwise = Effects.EnterTapped()`; a future "as ~ enters,
  * sacrifice another creature" land could wrap `Effects.Sacrifice(filter)`.
  *
  * Distinct from a "when ~ enters" [com.wingedsheep.sdk.scripting.trigger.Trigger]:

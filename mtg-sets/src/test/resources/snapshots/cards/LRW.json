@@ -328,10 +328,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "Giant",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]
@@ -782,10 +779,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "Goblin",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]
@@ -6869,10 +6863,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "Elf",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]
@@ -14449,10 +14440,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "Faerie",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]
@@ -18259,10 +18247,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "Merfolk",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]

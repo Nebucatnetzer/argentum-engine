@@ -31,7 +31,7 @@ import com.wingedsheep.sdk.scripting.targets.EffectTarget
  *     `ChooseOption(BASIC_LAND_TYPE)` → `SetLandType`.
  *  3. [Effects.MayPay] gating [PayLifeEffect]`(2)` — "you may pay 2 life" — with an empty
  *     `ifPaid` (paying is its own reward; the land stays untapped) and `ifNotPaid` =
- *     `Effects.Tap(EffectTarget.Self)`, the same "if you don't, this land enters tapped" rider the
+ *     `Effects.EnterTapped()`, the same "if you don't, this land enters tapped" rider the
  *     SOI shadow-land cycle (Game Trail, Port Town, …) uses for its decline branch.
  */
 val MultiversalPassage = card("Multiversal Passage") {
@@ -54,7 +54,7 @@ val MultiversalPassage = card("Multiversal Passage") {
                 run(Effects.MayPay(
                     cost = Effects.PayLife(2),
                     then = Effects.Nothing,
-                    otherwise = Effects.Tap(EffectTarget.Self),
+                    otherwise = Effects.EnterTapped(),
                 ))
             }
         )

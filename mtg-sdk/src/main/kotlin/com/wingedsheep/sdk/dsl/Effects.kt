@@ -5953,6 +5953,15 @@ object Effects {
         TapUntapEffect(target, tap = false)
 
     /**
+     * "This permanent enters tapped" — the rider of an [com.wingedsheep.sdk.scripting.OnEnterRun]
+     * as-enters replacement ("you may reveal a Goblin card from your hand. If you don't, this land
+     * enters tapped"). An entry modification, not [Tap]: no "becomes tapped" event, and an
+     * "enters untapped" replacement (The Wandering Minstrel) overrides it.
+     */
+    fun EnterTapped(): Effect =
+        com.wingedsheep.sdk.scripting.effects.EnterTappedEffect
+
+    /**
      * Unlock a locked door of a target Room (CR 709.5f) — the resolution-time "unlock" instruction.
      * Pairs with an "up to one target Room you control with a locked door" `TargetObject`
      * (`TargetFilter.…hasLockedDoor()`). Emits the same door-unlock events as the unlock-cost

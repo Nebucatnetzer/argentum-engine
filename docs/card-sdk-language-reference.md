@@ -1476,6 +1476,7 @@ serialized shape; the facade for each is:
 | `SkipStepOrPhaseEffect` | `Effects.SkipNextStepOrPhase(part, target)` / `Effects.SkipStepOrPhaseThisTurn(part, target)` |
 | `TakeExtraTurnEffect` | `Effects.TakeExtraTurn` |
 | `TapUntapEffect` | `Effects.Tap(target)` / `Effects.Untap(target)` |
+| `EnterTappedEffect` | `Effects.EnterTapped()` |
 | `TauntEffect` | `Effects.Taunt` |
 | `TransformEffect` | `Effects.Transform` |
 | `FlipEffect` | `Effects.Flip` |
@@ -2065,7 +2066,7 @@ uses `Patterns.Exile.impulse()`; playing the card follows ordinary costs and tim
   Revealing emits a `CardsRevealedEvent` and stops; declining (or empty selection) runs
   `otherwise`. Compose with `Effects.Tap`/`Effects.Sacrifice`/etc. via `otherwise` to
   express "if you don't, X" riders — e.g. SOI shadow lands wrap this in
-  `OnEnterRun(...)` with `otherwise = Effects.Tap(EffectTarget.Self)` for the
+  `OnEnterRun(...)` with `otherwise = Effects.EnterTapped()` for the
   "this land enters tapped" branch.
 - `Effects.Behold(filter, ifBeheld?, otherwise?)` — resolution-time **behold** (`BeholdEffect`): "you may
   behold a `filter`. If you do, `ifBeheld`. If you don't, `otherwise`." The behold itself is optional — the controller may
@@ -3912,6 +3913,12 @@ wrappers: Word of Command composes it inside `WithManaAbilitySources` and
   `target` is usually `EffectTarget.TriggeringEntity` ("that Equipment" inside a delayed trigger) or
   `EffectTarget.Self`. Used by Stolen Uniform's "when you lose control of that Equipment … unattach it".
 - `TapUntapEffect(target, isTap)` — tap or untap. Facade: `Effects.Tap` / `Effects.Untap`.
+- `EnterTappedEffect` — "this permanent enters tapped", the rider of an `OnEnterRun` as-enters
+  replacement (reveal lands, snarls, Multiversal Passage's "if you don't, it enters tapped"). Facade:
+  `Effects.EnterTapped()`. An entry modification, not a tap: it marks the entering permanent tapped
+  without a "becomes tapped" event, and an `EntersUntapped` replacement (The Wandering Minstrel,
+  Spelunking) overrides it (CR 616.1). Use it instead of `Effects.Tap(EffectTarget.Self)` for any
+  "enters tapped" clause inside `OnEnterRun`.
 - `Effects.TapEachTarget()` — "tap up to N target creatures": taps every object chosen as a target.
   Composes `ForEachTargetEffect` over `Effects.Tap(ContextTarget(0))`, so the count lives only on the
   spell's `TargetCreature`/`TargetPermanent` (`count`, `unlimited`, or `dynamicMaxCount`) — never
@@ -5332,7 +5339,7 @@ A resolving nonpermanent spell retains its stack instance through serialized eff
     (most self-referential effects live on creatures). Effects that also apply to *non-creature*
     permanents — `TransformEffect` / `ExileAndReturnTransformedEffect`, `SacrificeTargetEffect`
     (`Effects.SacrificeTarget`, which a land or artifact uses to sacrifice itself), `TapUntapEffect`
-    (`Effects.Tap(EffectTarget.Self)` — Multiversal Passage's "if you don't, it enters tapped"), and
+    (`Effects.Tap(EffectTarget.Self)` — "tap this land"), and
     `GatedEffect` (which builds its template from its sub-effects' templates), and the ability
     grants `GrantTriggeredAbility` / `GrantActivatedAbility` / `GrantStaticAbility` /
     `GrantReplacementEffect` — must not hard-code either noun, so they implement
