@@ -422,9 +422,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -436,9 +435,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -1284,9 +1282,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -1298,9 +1295,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -2836,9 +2832,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -2850,9 +2845,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -6050,9 +6044,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -6064,9 +6057,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -7496,9 +7488,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -7510,9 +7501,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -10997,9 +10987,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -11011,9 +11000,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -16816,9 +16804,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -16830,9 +16817,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -16930,9 +16916,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -16944,9 +16929,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -17424,9 +17408,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
@@ -17438,9 +17421,8 @@
                         {
                             "type": "Compare",
                             "left": {
-                                "type": "EntityProperty",
-                                "entity": "TriggeringEntity",
-                                "numericProperty": "ManaSpent"
+                                "type": "ContextProperty",
+                                "key": "MANA_SPENT_ON_TRIGGERING_SPELL"
                             },
                             "operator": "GT",
                             "right": {
