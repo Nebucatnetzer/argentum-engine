@@ -1,4 +1,3 @@
-
 package com.wingedsheep.assay.grammar
 
 import com.wingedsheep.assay.syntax.ParseOutcome

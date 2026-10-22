@@ -710,15 +710,11 @@ object Amounts {
      * "Target creature gets +X/+X until end of turn, where X is the number of Elves on the
      * battlefield." — Timberwatch Elf, and Magma Sliver's granted "+X/+0" sibling.
      *
-     * The *shape* of the modifier is the rule's parameter rather than a slot, because "+X/+X" and
-     * "+X/+0" are two printed forms in which the letter appears a different number of times;
-     * [Primitives.statModifiers] reads numerals and cannot spell either.
-     */
-
-    /**
-     * Which stat axes use the calculated X.
+     * The *shape* of the modifier is the rule's parameter rather than a slot, because "+X/+X",
+     * "+X/+0" and "+0/+X" place the letter on different axes; [Primitives.statModifiers] reads
+     * numerals and cannot spell any of them.
      *
-     * The absent axis is a fixed zero, not XValue.
+     * Each shape names the axes the calculated X lands on; the absent axis is a fixed zero, not X.
      */
     private enum class CountedPumpShape(
         val modifier: String,
@@ -738,10 +734,7 @@ object Amounts {
             if (this == TOUGHNESS) stats.toughnessModifier else stats.powerModifier
     }
 
-    /**
-     * "Target creature gets +X/+0 until end of turn,
-     * where X is the number of artifacts you control."
-     */
+    /** "Target creature gets +X/+0 until end of turn, where X is the number of artifacts you control." */
     private fun pumpTargetByCount(shape: CountedPumpShape): Phrase<CardScript> {
         fun scriptFor(amount: DynamicAmount, filter: GameObjectFilter) = CardScript(
             spellEffect = Effects.ModifyStats(
@@ -779,12 +772,7 @@ object Amounts {
         }
     }
 
-    /**
-     * "~ gets +0/+X until end of turn,
-     * where X is the number of artifacts you control."
-     *
-     * Unlike targeted pumps, this modifies the source itself.
-     */
+    /** "~ gets +0/+X until end of turn, where X is the number of artifacts you control." */
     private fun pumpSelfByCount(shape: CountedPumpShape): Phrase<CardScript> {
         fun scriptFor(amount: DynamicAmount) = CardScript(
             spellEffect = Effects.ModifyStats(
@@ -816,7 +804,6 @@ object Amounts {
             }
         }
     }
-
 
     /**
      * "All creatures get -X/-X until end of turn." — Bane of the Living's morph payoff.

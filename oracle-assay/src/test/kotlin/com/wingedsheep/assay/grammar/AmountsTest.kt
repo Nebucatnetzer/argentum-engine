@@ -5,9 +5,9 @@ import com.wingedsheep.assay.syntax.parseLine
 import com.wingedsheep.assay.syntax.printLine
 import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.model.CharacteristicValue
-import com.wingedsheep.sdk.scripting.effects.ModifyStatsEffect
 import com.wingedsheep.sdk.scripting.GameObjectFilter
 import com.wingedsheep.sdk.scripting.GrantDynamicStats
+import com.wingedsheep.sdk.scripting.effects.ModifyStatsEffect
 import com.wingedsheep.sdk.scripting.references.Player
 import com.wingedsheep.sdk.scripting.values.Aggregation
 import com.wingedsheep.sdk.scripting.values.CardNumericProperty
@@ -307,7 +307,6 @@ class AmountsTest : StringSpec({
             DynamicAmount.AggregateBattlefield(Player.You, GameObjectFilter.Artifact)
     }
 
-
     "calculated modifiers compose with activated and triggered abilities" {
         roundTrips(
             "{1}{R}: ~ gets +X/+0 until end of turn, " +
@@ -329,13 +328,13 @@ class AmountsTest : StringSpec({
         Grammar.abilityLine.printLine(fragment(triggered)) shouldBe canonical
     }
 
-
     "calculated power and toughness boosts are different models" {
         val amount = "the number of artifacts you control"
 
         fragment("~ gets +X/+0 until end of turn, where X is $amount.") shouldNotBe
             fragment("~ gets +0/+X until end of turn, where X is $amount.")
     }
+
     "calculated boosts distinguish the source from a target" {
         val amount = "the number of artifacts you control"
 
