@@ -30,6 +30,7 @@ import com.wingedsheep.engine.core.SelectManaSourcesDecision
 import com.wingedsheep.engine.core.SplitPilesDecision
 import com.wingedsheep.engine.core.YesNoDecision
 import com.wingedsheep.engine.core.YesNoResponse
+import com.wingedsheep.engine.legalactions.AdditionalCostData
 import com.wingedsheep.engine.legalactions.LegalAction
 import com.wingedsheep.engine.registry.CardRegistry
 import com.wingedsheep.engine.state.ComponentContainer
@@ -109,7 +110,7 @@ class ObservationBuilder(
         val canSeePlay = state.pendingDecision?.let { revealAll || perspectivePlayerId == it.playerId ||
             perspectivePlayerId == state.actorFor(it.playerId) } ?: false
         val pendingDecisionView = pendingDecisionAndRegistry?.first?.let {
-            if (canSeePlay) it else it.copy(subjectEntityId = null)
+            if (canSeePlay) withChoices(it, state.pendingDecision!!) else it.copy(subjectEntityId = null).withoutChoices()
         }
         val decisionRegistry = pendingDecisionAndRegistry?.second ?: ActionRegistry.EMPTY
 
@@ -439,8 +440,75 @@ class ObservationBuilder(
             validBlockers = la.validBlockers.orEmpty(),
             blockerMaxBlockCounts = la.blockerMaxBlockCounts.orEmpty(),
             mandatoryBlockerAssignments = la.mandatoryBlockerAssignments.orEmpty(),
-            isDecisionOption = false
+            isDecisionOption = false,
+            targetRequirements = la.targetRequirements.orEmpty().map { req ->
+                TargetRequirementView(req.index, req.description, req.minTargets, req.maxTargets, req.validTargets)
+            },
+            costChoices = costChoiceViews(la)
         )
+    }
+
+    /**
+     * The cost choices [la] needs completed through `ActionParams`, flattened from the engine's
+     * [AdditionalCostData] (and its `alsoRequired` parts) plus crew / tap-for-power costs.
+     */
+    private fun costChoiceViews(la: LegalAction): List<CostChoiceView> = buildList {
+        fun addFrom(info: AdditionalCostData) {
+            val d = info.description
+            if (info.validSacrificeTargets.isNotEmpty()) {
+                add(CostChoiceView("sacrifice", d, info.validSacrificeTargets, info.sacrificeCount, info.sacrificeCount))
+            }
+            if (info.validTapTargets.isNotEmpty()) {
+                add(CostChoiceView("tap", d, info.validTapTargets, info.tapCount, info.tapCount))
+            }
+            if (info.validDiscardTargets.isNotEmpty()) {
+                add(CostChoiceView("discard", d, info.validDiscardTargets, info.discardCount, info.discardCount))
+            }
+            if (info.validBounceTargets.isNotEmpty()) {
+                add(CostChoiceView("bounce", d, info.validBounceTargets, info.bounceCount, info.bounceCount))
+            }
+            if (info.validExileTargets.isNotEmpty()) {
+                add(
+                    CostChoiceView(
+                        "exile", d, info.validExileTargets, info.exileMinCount, info.exileMaxCount,
+                        contribution = info.exileCardWeights, minTotal = info.exileMinTotalWeight
+                    )
+                )
+            }
+            if (info.validCraftMaterials.isNotEmpty()) {
+                add(
+                    CostChoiceView(
+                        "exile", d, info.validCraftMaterials, info.craftMinCount,
+                        info.craftMaxCount ?: info.validCraftMaterials.size
+                    )
+                )
+            }
+            if (info.tapForPowerCreatures.isNotEmpty()) {
+                add(
+                    CostChoiceView(
+                        "tap", d, info.tapForPowerCreatures.map { it.entityId }, 1, info.tapForPowerCreatures.size,
+                        contribution = info.tapForPowerCreatures.associate { it.entityId to it.power },
+                        minTotal = info.tapForPowerRequired
+                    )
+                )
+            }
+            info.alsoRequired.forEach(::addFrom)
+        }
+        la.additionalCostInfo?.let(::addFrom)
+        val crewLike = la.tapForPowerCreatures.orEmpty()
+        if (la.tapForPower && crewLike.isNotEmpty()) {
+            add(
+                CostChoiceView(
+                    param = if (la.action is com.wingedsheep.engine.core.CrewVehicle) "crew" else "tap",
+                    description = la.description,
+                    candidates = crewLike.map { it.entityId },
+                    min = 1,
+                    max = crewLike.size,
+                    contribution = crewLike.associate { it.entityId to it.power },
+                    minTotal = la.tapForPowerRequired ?: 0
+                )
+            )
+        }
     }
 
     // =========================================================================
@@ -603,6 +671,42 @@ class ObservationBuilder(
                     ActionRegistry.EMPTY
         }
     }
+
+    /**
+     * Attach the legal options of a decision the folded action-ID space can't express, so an
+     * out-of-process trainer can build a valid structured `DecisionResponse` without guessing ids.
+     * Only called for the deciding seat; other seats get [PendingDecisionView.withoutChoices].
+     */
+    private fun withChoices(view: PendingDecisionView, decision: PendingDecision): PendingDecisionView =
+        when (decision) {
+            is ChooseTargetsDecision -> view.copy(
+                targetRequirements = decision.targetRequirements.map { req ->
+                    TargetRequirementView(
+                        index = req.index,
+                        description = req.description,
+                        minTargets = req.minTargets,
+                        maxTargets = req.maxTargets,
+                        legalTargets = decision.legalTargets[req.index].orEmpty()
+                    )
+                }
+            )
+            is SelectCardsDecision -> view.copy(
+                candidateIds = decision.options - decision.nonSelectableOptions.toSet(),
+                candidateInfo = decision.cardInfo.orEmpty()
+            )
+            is SearchLibraryDecision -> view.copy(candidateIds = decision.options, candidateInfo = decision.cards)
+            is ChooseModeDecision -> view.copy(
+                modes = decision.modes.map { DecisionModeView(it.index, it.text, it.available) }
+            )
+            is DistributeDecision -> view.copy(candidateIds = decision.targets)
+            is OrderObjectsDecision -> view.copy(candidateIds = decision.objects, candidateInfo = decision.cardInfo.orEmpty())
+            is ReorderLibraryDecision -> view.copy(candidateIds = decision.cards, candidateInfo = decision.cardInfo)
+            is SplitPilesDecision -> view.copy(candidateIds = decision.cards, candidateInfo = decision.cardInfo.orEmpty())
+            is AssignDamageDecision -> view.copy(
+                candidateIds = decision.orderedTargets + listOfNotNull(decision.defenderId.takeIf { decision.hasTrample })
+            )
+            else -> view
+        }
 
     private fun baseView(
         decision: PendingDecision,

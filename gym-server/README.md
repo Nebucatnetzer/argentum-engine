@@ -61,7 +61,7 @@ naming the same environment, but a client acting for several seats must still or
 observe-then-act pairs itself; seat selection is an information-set convention, not authentication.
 
 `revealAll=true` retains the debug view of every seat's choices. Unknown player IDs return 400.
-The observation contract hash is `argentum-gym-contract@v1.7-forced-play`. Mandatory paid play
+The observation contract hash is `argentum-gym-contract@v1.8-decision-and-cost-choices`. Mandatory paid play
 uses `PLAY_CARD`, identifies the card through `subjectEntityId`, and exposes ordinary cast/land
 action templates. Their action IDs accept normal casting parameters; structured callers send a
 `PlayCardResponse` carrying the completed action.

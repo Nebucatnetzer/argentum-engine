@@ -3,6 +3,7 @@ package com.wingedsheep.engine.core
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.stack.ChosenTarget
 import com.wingedsheep.sdk.model.EntityId
+import com.wingedsheep.sdk.scripting.AdditionalCostPayment
 import kotlinx.serialization.Serializable
 
 /**
@@ -23,9 +24,9 @@ import kotlinx.serialization.Serializable
  * Not expressible here, deliberately — each has its own channel:
  * - Complex decisions (target-selection pauses, damage assignment, ordering, …) → a
  *   [SubmitDecision] carrying a typed [DecisionResponse].
- * - Attacking bands (CR 702.22), alternative/additional cost payments, convoke/delve/improvise
- *   selections. A step carrying params for an action that can't use them is rejected with a
- *   message naming the action, never ignored.
+ * - Attacking bands (CR 702.22), alternative cost payments, convoke/delve/improvise selections.
+ *   A step carrying params for an action that can't use them is rejected with a message naming
+ *   the action, never ignored.
  *
  * @property attackers attacker entity id → the player, planeswalker or battle it attacks.
  * @property blockers blocker entity id → the attackers it blocks, in order.
@@ -33,13 +34,29 @@ import kotlinx.serialization.Serializable
  *   against the current state: a player id becomes a player target, an object on the stack a spell
  *   target, a battlefield permanent a permanent target, and a card in any other zone a card target.
  * @property xValue The value chosen for X.
+ * @property targetGroups Targets split by target requirement, for spells and abilities with more than
+ *   one ("target creature you control … target creature an opponent controls"). Sets the action's
+ *   `targetGroupCounts` so the engine doesn't have to infer the boundaries. Exclusive with [targets].
+ * @property sacrifice Permanents sacrificed to pay an additional cost.
+ * @property discard Cards discarded to pay an additional cost.
+ * @property exile Cards exiled to pay an additional cost, craft materials included.
+ * @property tap Permanents tapped to pay a "tap N untapped …" or tap-for-power cost.
+ * @property bounce Permanents returned to hand to pay an additional cost.
+ * @property crew Creatures tapped to crew a vehicle.
  */
 @Serializable
 data class ActionParams(
     val attackers: Map<EntityId, EntityId> = emptyMap(),
     val blockers: Map<EntityId, List<EntityId>> = emptyMap(),
     val targets: List<EntityId> = emptyList(),
-    val xValue: Int? = null
+    val xValue: Int? = null,
+    val targetGroups: List<List<EntityId>> = emptyList(),
+    val sacrifice: List<EntityId> = emptyList(),
+    val discard: List<EntityId> = emptyList(),
+    val exile: List<EntityId> = emptyList(),
+    val tap: List<EntityId> = emptyList(),
+    val bounce: List<EntityId> = emptyList(),
+    val crew: List<EntityId> = emptyList()
 ) {
     val isEmpty: Boolean
         get() = populatedFields.isEmpty()
@@ -51,6 +68,13 @@ data class ActionParams(
             if (blockers.isNotEmpty()) add("blockers")
             if (targets.isNotEmpty()) add("targets")
             if (xValue != null) add("xValue")
+            if (targetGroups.isNotEmpty()) add("targetGroups")
+            if (sacrifice.isNotEmpty()) add("sacrifice")
+            if (discard.isNotEmpty()) add("discard")
+            if (exile.isNotEmpty()) add("exile")
+            if (tap.isNotEmpty()) add("tap")
+            if (bounce.isNotEmpty()) add("bounce")
+            if (crew.isNotEmpty()) add("crew")
         }
 
     companion object {
@@ -82,21 +106,30 @@ object ActionParameterizer {
             }
 
             is CastSpell -> {
-                params.allowOnly(action, "targets", "xValue")
+                params.allowOnly(action, "targets", "targetGroups", "xValue", *COST_FIELDS)
+                val (targets, groupCounts) = params.chosenTargets(state)
                 action.copy(
-                    targets = params.targets.map { resolveTarget(it, state) }
-                        .ifEmpty { action.targets },
-                    xValue = params.xValue ?: action.xValue
+                    targets = targets ?: action.targets,
+                    targetGroupCounts = groupCounts ?: action.targetGroupCounts,
+                    xValue = params.xValue ?: action.xValue,
+                    additionalCostPayment = params.costPayment(action.additionalCostPayment)
                 )
             }
 
             is ActivateAbility -> {
-                params.allowOnly(action, "targets", "xValue")
+                params.allowOnly(action, "targets", "targetGroups", "xValue", *COST_FIELDS)
+                val (targets, groupCounts) = params.chosenTargets(state)
                 action.copy(
-                    targets = params.targets.map { resolveTarget(it, state) }
-                        .ifEmpty { action.targets },
-                    xValue = params.xValue ?: action.xValue
+                    targets = targets ?: action.targets,
+                    targetGroupCounts = groupCounts ?: action.targetGroupCounts,
+                    xValue = params.xValue ?: action.xValue,
+                    costPayment = params.costPayment(action.costPayment)
                 )
+            }
+
+            is CrewVehicle -> {
+                params.allowOnly(action, "crew")
+                action.copy(crewCreatures = params.crew)
             }
 
             else -> throw IllegalArgumentException(
@@ -123,6 +156,37 @@ object ActionParameterizer {
                 ?: throw IllegalArgumentException("Target $id is in no zone of the current state")
             ChosenTarget.Card(cardId = id, ownerId = key.ownerId, zone = key.zoneType)
         }
+    }
+
+    /** The [ActionParams] fields that fill an [AdditionalCostPayment]. */
+    private val COST_FIELDS = arrayOf("sacrifice", "discard", "exile", "tap", "bounce")
+
+    /** Resolved targets and, for [ActionParams.targetGroups], the per-requirement counts; nulls keep the template's. */
+    private fun ActionParams.chosenTargets(state: GameState): Pair<List<ChosenTarget>?, List<Int>?> {
+        require(targets.isEmpty() || targetGroups.isEmpty()) {
+            "Send either 'targets' or 'targetGroups', not both"
+        }
+        return when {
+            targetGroups.isNotEmpty() ->
+                targetGroups.flatten().map { resolveTarget(it, state) } to targetGroups.map { it.size }
+            targets.isNotEmpty() -> targets.map { resolveTarget(it, state) } to null
+            else -> null to null
+        }
+    }
+
+    /** Fold the cost-choice fields into [existing], leaving any field the caller didn't send as it was. */
+    private fun ActionParams.costPayment(existing: AdditionalCostPayment?): AdditionalCostPayment? {
+        if (sacrifice.isEmpty() && discard.isEmpty() && exile.isEmpty() && tap.isEmpty() && bounce.isEmpty()) {
+            return existing
+        }
+        val base = existing ?: AdditionalCostPayment()
+        return base.copy(
+            sacrificedPermanents = sacrifice.ifEmpty { base.sacrificedPermanents },
+            discardedCards = discard.ifEmpty { base.discardedCards },
+            exiledCards = exile.ifEmpty { base.exiledCards },
+            tappedPermanents = tap.ifEmpty { base.tappedPermanents },
+            bouncedPermanents = bounce.ifEmpty { base.bouncedPermanents }
+        )
     }
 
     /**

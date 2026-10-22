@@ -145,6 +145,27 @@ return `400` with the reason — neither is silently dropped, on `/step` or on `
 richer (bands, alternative-cost payments, convoke/delve selections) is not expressible over `step`;
 complex decisions go to `POST /envs/{id}/decision` (section 5).
 
+### Cost choices and multi-requirement targets
+
+Each legal action also lists what its cost and targets need:
+
+- `targetRequirements[]` — one entry per target requirement (`index`, `description`, `minTargets`,
+  `maxTargets`, `legalTargets`). When there is more than one, send the choice as
+  `params.targetGroups` — one list per requirement, in order — instead of `targets`.
+- `costChoices[]` — each entry names the `params` field that carries it (`sacrifice`, `tap`,
+  `discard`, `exile`, `bounce`, `crew`), its `candidates`, and how many to pick (`min`..`max`).
+  For crew and other tap-for-power costs, `contribution` gives each creature's value and the picks
+  must add up to at least `minTotal`. Craft materials go in `exile`.
+
+```json
+{ "actionId": 14, "params": { "crew": ["<creatureId>"] } }
+{ "actionId": 1, "params": { "targetGroups": [["<myCreature>"], ["<theirCreature>"]] } }
+{ "actionId": 4, "params": { "sacrifice": ["<permanentId>"] } }
+```
+
+`affordable` assumes the cheapest legal choices; a spell that is cheaper with a particular target,
+or a tap cost that uses the lands its mana needs, can still be rejected once the choices are made.
+
 ### Reading an observation
 
 The fields that matter most for spotting bugs:
@@ -232,6 +253,18 @@ empty. Post a typed `DecisionResponse` to `POST /envs/{id}/decision`. The JSON d
 Every response also needs `decisionId` (copy it from `pendingDecision.decisionId`). The
 `pendingDecision.shape` field carries the constraints (`minSelections`, `maxSelections`,
 `numericMin/Max`, `availableColors`, `totalToDistribute`, `budget`).
+
+The deciding seat also gets the legal choices, so a response never has to guess ids:
+
+| Field | Filled for | Holds |
+|---|---|---|
+| `targetRequirements[]` | `CHOOSE_TARGETS` | `index` (the `selectedTargets` key), `description`, `minTargets`, `maxTargets`, `legalTargets` |
+| `candidateIds[]` | `SELECT_CARDS`, `SEARCH_LIBRARY`, `DISTRIBUTE`, `ORDER_OBJECTS`, `REORDER_LIBRARY`, `SPLIT_PILES`, `ASSIGN_DAMAGE` | the entity ids the response may name |
+| `candidateInfo{}` | the same, when a candidate is otherwise hidden (library cards) | `name`, `manaCost`, `typeLine` per id |
+| `modes[]` | multi-mode `CHOOSE_MODE` | `index`, `text`, `available` |
+
+Other seats see the decision's kind and prompt but none of these fields, so an opponent's library
+search doesn't reveal the library.
 
 ```bash
 # Choose targets for a pending ChooseTargets decision (requirement 0 -> one creature)
