@@ -3,6 +3,7 @@ package com.wingedsheep.sdk.scripting
 import com.wingedsheep.sdk.core.CounterType
 import com.wingedsheep.sdk.scripting.conditions.Condition
 import com.wingedsheep.sdk.scripting.filters.unified.GroupFilter
+import com.wingedsheep.sdk.scripting.references.Player
 import com.wingedsheep.sdk.scripting.text.TextReplacer
 import com.wingedsheep.sdk.scripting.values.DynamicAmount
 import com.wingedsheep.sdk.scripting.values.EntityNumericProperty
@@ -47,6 +48,7 @@ data class ModifySpellCost(
             is SpellCostTarget.YouCast -> "${filterAdjective(target.filter)}$noun you cast"
             is SpellCostTarget.AnyCaster -> "${filterAdjective(target.filter)}$noun"
             is SpellCostTarget.OpponentsCast -> "${filterAdjective(target.filter)}$noun your opponents cast"
+            is SpellCostTarget.PlayerCasts -> "${filterAdjective(target.filter)}$noun ${target.player.description} casts"
             is SpellCostTarget.OpponentsCastTargeting ->
                 "Spells your opponents cast that target ${target.targetFilter.description}"
             is SpellCostTarget.OpponentsCastFromZones ->
@@ -104,7 +106,8 @@ data class ModifySpellCost(
             is SpellCostTarget.AnyCaster,
             is SpellCostTarget.OpponentsCast,
             is SpellCostTarget.OpponentsCastTargeting,
-            is SpellCostTarget.OpponentsCastFromZones ->
+            is SpellCostTarget.OpponentsCastFromZones,
+            is SpellCostTarget.PlayerCasts ->
                 sourceDescription
                     .replace("you control", "its controller controls")
                     .replace("you own", "its controller owns")
@@ -277,6 +280,35 @@ sealed interface SpellCostTarget {
         val zones: Set<com.wingedsheep.sdk.core.Zone>,
         val filter: GameObjectFilter = GameObjectFilter.Any,
     ) : SpellCostTarget {
+        override fun applyTextReplacement(replacer: TextReplacer): SpellCostTarget {
+            val newFilter = filter.applyTextReplacement(replacer)
+            return if (newFilter !== filter) copy(filter = newFilter) else this
+        }
+    }
+
+    /**
+     * Spells matching [filter] cast by the one player [player] names relative to the source —
+     * "Spells with the chosen name enchanted player casts cost {2} more to cast" (Curse of Silence,
+     * [Player.EnchantedPlayer]).
+     *
+     * [player] must resolve to a single player recorded on the source:
+     * [Player.EnchantedPlayer] (the player the source Aura is attached to),
+     * [Player.ChosenOpponent] or [Player.ChosenPlayer] (the player chosen as the source entered).
+     * Any other reference is rejected — "you" and "your opponents" are [YouCast] and
+     * [OpponentsCast]. A source that doesn't currently name a player taxes nobody.
+     */
+    @SerialName("PlayerCasts")
+    @Serializable
+    data class PlayerCasts(
+        val player: Player,
+        val filter: GameObjectFilter = GameObjectFilter.Any,
+    ) : SpellCostTarget {
+        init {
+            require(player == Player.EnchantedPlayer || player == Player.ChosenOpponent || player == Player.ChosenPlayer) {
+                "PlayerCasts names a source-recorded player (EnchantedPlayer, ChosenOpponent, ChosenPlayer), not $player"
+            }
+        }
+
         override fun applyTextReplacement(replacer: TextReplacer): SpellCostTarget {
             val newFilter = filter.applyTextReplacement(replacer)
             return if (newFilter !== filter) copy(filter = newFilter) else this
@@ -910,8 +942,8 @@ sealed interface CostReductionSource {
 
     /**
      * Reduces cost by [amountPerCreature] for each creature that was declared as an attacker this
-     * turn — by ANY player, not just the caster ("for each creature that attacked this turn" is
-     * not controller-scoped), and counting every combat phase this turn.
+     * turn — by any player, or only by the caster with [yoursOnly] ("for each creature that
+     * attacked this turn" is not controller-scoped), counting every combat phase this turn.
      *
      * The turn-history sibling of [PermanentsSacrificedThisTurn], and deliberately *not*
      * `PermanentsOnBattlefieldMatching(Creature.attackedThisTurn())`: that reads the live
@@ -924,13 +956,21 @@ sealed interface CostReductionSource {
      * attacked this turn"). Per its ruling the reduction never touches the colored part of the
      * cost, so it can't reduce below `{R}` — that clamping is the generic-reduction rail's, not
      * this source's.
+     *
+     * [yoursOnly] narrows the count to the caster's own attack declarations — "for each creature
+     * you attacked with this turn" (Search Party Captain). Same turn history, read from the
+     * caster's `PlayerAttackersThisTurnComponent` alone, so a creature that attacked and then
+     * died (or changed control) still counts for the player who declared it.
      */
     @SerialName("CreaturesThatAttackedThisTurn")
     @Serializable
     data class CreaturesThatAttackedThisTurn(
-        val amountPerCreature: Int = 1
+        val amountPerCreature: Int = 1,
+        val yoursOnly: Boolean = false
     ) : CostReductionSource {
-        override val description: String = "the number of creatures that attacked this turn"
+        override val description: String =
+            if (yoursOnly) "the number of creatures you attacked with this turn"
+            else "the number of creatures that attacked this turn"
     }
 
     /**

@@ -462,8 +462,10 @@ class PlayLandHandler(
 
         // OnEnterRun — generic "as ~ enters, run [effect]" replacement.
         // Runs BEFORE the EntersTapped check so effects like
-        // Effects.Tap(EffectTarget.Self) (Game Trail's "otherwise" rider) apply
-        // synchronously with entry. May pause for player input via continuations.
+        // Effects.EnterTapped() (Game Trail's "otherwise" rider) apply
+        // synchronously with entry. That rider consults EnterUntappedReplacements itself, so
+        // returning early here doesn't skip "lands enter untapped". May pause for player input
+        // via continuations.
         if (cardDef != null) {
             val onEnter = com.wingedsheep.engine.handlers.effects.PermanentEntryReplacements
                 .onEnterRunEffectFor(cardDef)

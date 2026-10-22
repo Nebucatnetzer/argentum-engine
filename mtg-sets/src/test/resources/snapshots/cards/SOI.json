@@ -1305,10 +1305,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "land Island|Swamp",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]
@@ -1392,7 +1389,7 @@
             {
                 "id": "Crawling Sensation:2",
                 "trigger": {
-                    "type": "CardsPutIntoYourGraveyardEvent",
+                    "type": "CardsPutIntoGraveyardEvent",
                     "filter": "land",
                     "firstTimeEachTurn": true
                 },
@@ -2472,10 +2469,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "land Swamp|Mountain",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]
@@ -2638,10 +2632,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "land Mountain|Forest",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]
@@ -6571,7 +6562,7 @@
             {
                 "id": "The Gitrog Monster:2",
                 "trigger": {
-                    "type": "CardsPutIntoYourGraveyardEvent",
+                    "type": "CardsPutIntoGraveyardEvent",
                     "filter": "land"
                 },
                 "binding": "ANY",

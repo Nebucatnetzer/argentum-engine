@@ -93,7 +93,7 @@ Families:
 - `AbilityCost.Exert` — Exert this permanent (CR 701.43a) — choose to have it not untap during your next untap step.
 - `AbilityCost.ExileGrantingPermanent` — Exile the permanent that granted this activated ability to the source.
 - `AbilityCost.ExileSelf` — Exile self (the permanent with this ability)
-- `AbilityCost.ExileXFromGraveyard(filter: GameObjectFilter)` — Exile X cards from graveyard, where X is the ability's X value.
+- `AbilityCost.ExileXFromGraveyard(filter: GameObjectFilter, linkToSource: Boolean)` — Exile X cards from graveyard, where X is the ability's X value.
 - `AbilityCost.Forage` — Forage: exile three cards from your graveyard or sacrifice a Food.
 - `AbilityCost.Free` — No cost ({0}) — the ability is free to activate
 - `AbilityCost.Loyalty(change: Int)` — Loyalty cost for planeswalker abilities
@@ -533,7 +533,7 @@ Families:
 - `CostReductionSource.CardsInGraveyardMatchingFilter(filter: GameObjectFilter, amountPerCard: Int)` — Reduces cost by 1 for each card in your graveyard matching the filter.
 - `CostReductionSource.ChosenTargets(beyond: Int)` — The number of different players and objects the spell targets, less beyond — "for each target" (Hinata, Dawn-Crowned: `ChosenTargets()`) and "for each target beyond the first" (Officious Interrogat…
 - `CostReductionSource.ColorsAmongPermanentsYouControl` — Vivid - reduces cost by number of colors among permanents you control.
-- `CostReductionSource.CreaturesThatAttackedThisTurn(amountPerCreature: Int)` — Reduces cost by amountPerCreature for each creature that was declared as an attacker this turn — by ANY player, not just the caster ("for each creature that attacked this turn" is not controller-sc…
+- `CostReductionSource.CreaturesThatAttackedThisTurn(amountPerCreature: Int, yoursOnly: Boolean)` — Reduces cost by amountPerCreature for each creature that was declared as an attacker this turn — by any player, or only by the caster with yoursOnly ("for each creature that attacked this turn" is…
 - `CostReductionSource.CreaturesYouControl` — Reduces cost by number of creatures you control.
 - `CostReductionSource.DifferentlyNamedPermanentsYouControl(filter: GameObjectFilter)` — Reduces cost by the number of differently named permanents the caster controls matching a filter.
 - `CostReductionSource.Dynamic(amount: DynamicAmount)` — Reduces cost by an arbitrary DynamicAmount, evaluated at cast time with the permanent that carries the ModifySpellCost as the amount's *source* — "{X} less to cast, where X is `<amount>`".
@@ -808,7 +808,7 @@ Families:
 - `CreateTokenCopyOfEquippedCreatureEffect(removeLegendary: Boolean, grantHaste: Boolean)` — Create a token that's a copy of an equipped/attached creature.
 - `CreateTokenCopyOfSourceEffect(count: Int, overridePower: Int?, overrideToughness: Int?, exileAtStep: Step?, addCardTypes: Set<String>, removeLegendary: Boolean, exceptions: CopyExceptions)` — Create a token that's a copy of the source permanent.
 - `CreateTokenCopyOfTargetEffect(target: EffectTarget, count: DynamicAmount, overridePower: Int?, overrideToughness: Int?, tapped: Boolean, attacking: Boolean, triggeredAbilities: List<TriggeredAbility>, addedKeywords: Set<Keyword>, addedSupertypes: Set<Supertype>, removedSupertypes: Set<Supertype>, overrideColors: Set<Color>?, addedColors: Set<Color>, overrideSubtypes: Set<Subtype>?, addedSubtypes: Set<Subtype>, overrideCardTypes: Set<CardType>?, activatedAbilities: List<ActivatedAbility>, addedStaticAbilities: List<StaticAbility>, sacrificeAtStep: Step?, sacrificeOnlyOnControllersTurn: Boolean, addCardTypes: Set<String>, exileAtStep: Step?, exileUnlessSourceIsRingBearer: Boolean, controller: EffectTarget?, noManaCost: Boolean, exceptions: CopyExceptions, stampCreator: Boolean, attachedTo: EffectTarget?, attackedPlayer: EffectTarget?, attackDefender: EnteringAttackDefender, basePower: DynamicAmount?, baseToughness: DynamicAmount?)` — Create token copies of a targeted permanent.
-- `CreateTokenEffect(count: DynamicAmount, power: Int, toughness: Int, colors: Set<Color>, creatureTypes: Set<String>, keywords: Set<Keyword>, name: String?, imageUri: String?, controller: EffectTarget?, dynamicPower: DynamicAmount?, dynamicToughness: DynamicAmount?, tapped: Boolean, attacking: Boolean, legendary: Boolean, artifactToken: Boolean, enchantmentToken: Boolean, staticAbilities: List<StaticAbility>, triggeredAbilities: List<TriggeredAbility>, activatedAbilities: List<ActivatedAbility>, exileAtStep: Step?, sacrificeAtStep: Step?, initialCounters: Map<CounterType, Int>, colorsFromChoice: ChoiceSlot?, creatureTypesFromChoice: ChoiceSlot?, stampCreator: Boolean, numericKeywords: List<KeywordAbility.Numeric>, attackDefender: EnteringAttackDefender)` — Create token effect.
+- `CreateTokenEffect(count: DynamicAmount, power: Int, toughness: Int, colors: Set<Color>, creatureTypes: Set<String>, keywords: Set<Keyword>, name: String?, imageUri: String?, controller: EffectTarget?, dynamicPower: DynamicAmount?, dynamicToughness: DynamicAmount?, tapped: Boolean, attacking: Boolean, legendary: Boolean, artifactToken: Boolean, enchantmentToken: Boolean, staticAbilities: List<StaticAbility>, triggeredAbilities: List<TriggeredAbility>, activatedAbilities: List<ActivatedAbility>, exileAtStep: Step?, sacrificeAtStep: Step?, initialCounters: Map<CounterType, Int>, colorsFromChoice: ChoiceSlot?, creatureTypesFromChoice: ChoiceSlot?, stampCreator: Boolean, numericKeywords: List<KeywordAbility.Numeric>, attackDefender: EnteringAttackDefender, attackedPlayer: EffectTarget?)` — Create token effect.
 - `DamageCantBePreventedThisTurnEffect` — Turn-scoped "Damage can't be prevented this turn" (CR 615.6 — a prevention effect can't apply to damage that can't be prevented).
 - `DamageToTargetCantBePreventedThisTurnEffect(target: EffectTarget)` — "Damage that would be dealt to target this turn can't be prevented or dealt instead to another permanent or player." — the *per-recipient* form of DamageCantBePreventedThisTurnEffect (Whippoorwill).
 - `DealDamageEffect(amount: DynamicAmount, target: EffectTarget, cantBePrevented: Boolean, damageSource: EffectTarget?, excessToController: Boolean, excessDamageVariable: String?, damageDealtVariable: String?)` — Deal damage to a target.
@@ -845,6 +845,7 @@ Families:
 - `EmitSurveiledEventEffect(gatherCollection: String)` — Emit a `SurveiledEvent` after a surveil pipeline finishes resolving — the surveil twin of EmitScriedEventEffect.
 - `EnchantPutOntoBattlefieldEffect(from: String, filter: GameObjectFilter)` — "This Aura loses its enchant ability and gains 'enchant filter put onto the battlefield with this Aura.' … attach this Aura to it." — the reanimation-Aura idiom (Animate Dead, Dance of the Dead, Ne…
 - `EndTheTurnEffect` — End the turn (CR 724.1).
+- `EnterTappedEffect` — "This permanent enters tapped" — the rider of an as-enters replacement, run inside com.wingedsheep.sdk.scripting.OnEnterRun: the reveal lands' "if you don't, this land enters tapped" (Auntie's Hove…
 - `ExchangeControlEffect(target1: EffectTarget, target2: EffectTarget)` — Exchange control of two target creatures.
 - `ExchangeLifeAndStatEffect(target: EffectTarget, stat: CreatureStat, player: EffectTarget)` — Exchange a player's life total with a creature's power or toughness (CR 701.12g).
 - `ExchangeLifeTotalsEffect(target: EffectTarget, drawEqualToLifeLost: Boolean)` — Exchange the controller's life total with target player's (CR 701.12c): each player gains or loses the life needed to reach the other's former total.
@@ -973,6 +974,7 @@ Families:
 - `MoveUntilSourceLeavesEffect(target: EffectTarget, destination: Zone)` — Move an object out of its zone until this source leaves the battlefield.
 - `MustBeBlockedEffect(target: EffectTarget, allCreatures: Boolean)` — Target creature must be blocked this turn.
 - `NoteCreatureTypeEffect(storeAs: String, prompt: String?, options: List<String>, secret: Boolean)` — "Note a creature type that hasn't been noted for this <source>." (LTR — Long List of the Ents) Prompts the controller to pick a creature type, with the source's *current* set of already-noted types…
+- `NoteNumberForSourceEffect(amount: DynamicAmount, slot: ChoiceSlot)` — "Note <a number>" for the source permanent — evaluate amount once and write it **durably on the source permanent** in its cast-choices bag under slot, replacing any prior value; read it back later…
 - `OpenLifeBidEffect(onWin: Effect, participant: Player)` — Open life-bidding auction between the caster and another participant.
 - `OpponentGuessesTopCardKindEffect(onGuessedRight: Effect, onGuessedWrong: Effect, chooser: Chooser, guesser: Chooser)` — "Choose land or nonland.
 - `OwnerGainsLifeEffect(amount: Int)` — Target player's owner gains life equal to a fixed amount.
@@ -1174,8 +1176,8 @@ Families:
 - `EventPattern.CardRevealedFromDrawEvent(cardFilter: GameObjectFilter?)` — When a card is revealed from the first draw of a turn.
 - `EventPattern.CardsLeftYourGraveyardEvent(filter: GameObjectFilter)` — Whenever one or more cards matching filter leave your graveyard.
 - `EventPattern.CardsPutIntoExileEvent(fromZones: Set<Zone>, filter: GameObjectFilter, includeTokens: Boolean)` — Whenever one or more cards matching filter are put into exile from any of fromZones.
+- `EventPattern.CardsPutIntoGraveyardEvent(filter: GameObjectFilter, firstTimeEachTurn: Boolean, player: Player)` — Whenever one or more cards matching filter are put into a graveyard from anywhere — yours by default; player picks whose.
 - `EventPattern.CardsPutIntoGraveyardFromLibraryEvent(filter: GameObjectFilter)` — Whenever one or more cards matching filter are put into your graveyard from your library.
-- `EventPattern.CardsPutIntoYourGraveyardEvent(filter: GameObjectFilter, firstTimeEachTurn: Boolean)` — Whenever one or more cards matching filter are put into your graveyard from anywhere.
 - `EventPattern.CaseSolvedEvent(player: Player)` — Whenever player solves a Case (CR 719.3a) — fires as that Case's "To solve" trigger resolves and the designation is stamped, which is exactly what the printed ruling for Case File Auditor says ("tr…
 - `EventPattern.CastThisSpellEvent` — When you cast this spell — a "cast trigger" (CR 603.2) that fires on the spell's *own* cast while it is on the stack; the ability travels with the spell.
 - `EventPattern.ChampionedEvent` — When a permanent is championed with this permanent (CR 702.72c) — "a permanent is 'championed' by another permanent if the latter exiles the former as the direct result of a champion ability." Mist…
@@ -1322,7 +1324,7 @@ Families:
 - `KeywordAbility.Emerge(cost: ManaCost, from: GameObjectFilter?)` — Emerge cost (CR 702.119, Eldritch Moon).
 - `KeywordAbility.Escape(cost: ManaCost, additionalCost: AdditionalCost?)` — Escape (CR 702.138, Theros Beyond Death).
 - `KeywordAbility.Evoke(cost: ManaCost)` — Evoke with a mana cost.
-- `KeywordAbility.Flashback(cost: ManaCost, additionalCost: AdditionalCost?, condition: Condition?)` — Flashback with a mana cost and an optional additional cost.
+- `KeywordAbility.Flashback(cost: ManaCost, additionalCost: AdditionalCost?, condition: Condition?, minimumXValue: Int)` — Flashback with a mana cost and an optional additional cost.
 - `KeywordAbility.Foretell(cost: ManaCost)` — Foretell (CR 702.143, Kaldheim).
 - `KeywordAbility.Gift(kind: GiftKind)` — Gift a kind (CR 702.174, Bloomburrow).
 - `KeywordAbility.Harmonize(cost: ManaCost)` — Harmonize with a mana cost (Tarkir: Dragonstorm).
@@ -1526,6 +1528,8 @@ Families:
 
 ## ReplacementEffect
 
+- `AttachToPlayerAsTransforms(appliesTo: EventPattern)` — "As this permanent transforms into this face, attach it to a player." — the as-transforms replacement of a transforming card's **Aura** face that enchants a player (Curse of Leeches).
+- `BecomesCopyAsTransforms(copyFilter: GameObjectFilter, copyFromZone: Zone, exceptions: CopyExceptions, counterType: CounterType, counterCount: DynamicAmount?, appliesTo: EventPattern)` — "As this creature transforms into this face, it becomes a copy of a copyFilter card …, except ….
 - `CapCounterPlacementThisTurn(amount: Int, appliesTo: EventPattern)` — Cap a counter placement at amount and lock the recipient out of further counters of that kind for the rest of the turn — "If you would get one or more poison counters, instead you get one poison co…
 - `CapDamage(maxAmount: Int, appliesTo: EventPattern)` — Cap damage at a maximum amount.
 - `CreateAdditionalToken(additionalTokenType: String, additionalTokenCount: Int, inheritTapped: Boolean, appliesTo: EventPattern, restrictions: List<Condition>, scale: AdditionalTokenScale)` — When a player would create one or more tokens matching appliesTo, also create additionalTokenCount predefined token(s) of a *different* type (additionalTokenType).
@@ -1579,6 +1583,7 @@ Families:
 - `ReplaceDrawWith(replacementEffect: Effect, optional: Boolean, appliesTo: EventPattern, restrictions: List<Condition>)` — Replace drawing with another effect.
 - `ReplaceLifeGainWith(replacementEffect: Effect, appliesTo: EventPattern.LifeGainEvent, restrictions: List<Condition>)` — Replace a life-gain event with an effect, without gaining life or using the stack.
 - `ReplaceLifePaymentWithLibraryExile(appliesTo: EventPattern)` — A life *payment* becomes an exile of that many cards off the top of the payer's library, so long as the library is deep enough to cover it.
+- `ReplaceLifeReductionToZero(instead: Effect, restrictions: List<Condition>, appliesTo: EventPattern)` — "If your life total would be reduced to 0 or less, instead …" — the replaced reduction runs instead (Enduring Angel).
 - `ReplaceTokenCreationWithAttachedCopy(optional: Boolean, oncePerTurn: Boolean, attachmentVerb: String, appliesTo: EventPattern)` — Replace token creation with creating token copies of the permanent this source is attached to.
 - `ReplaceTokenCreationWithToken(tokens: List<Effect>, appliesTo: EventPattern, optional: Boolean)` — "If one or more filtered tokens would be created under your control, that many token are created instead." Substitutes a *different* token for every token of the creation event the appliesTo filter…
 - `SetMinimumDamage(minAmount: Int, dynamicMinimum: DynamicAmount?, appliesTo: EventPattern)` — Raise damage to a minimum amount — the floor mirror of CapDamage.
@@ -1652,6 +1657,7 @@ Families:
 - `SpellCostTarget.OpponentsCast(filter: GameObjectFilter)` — Spells matching filter cast by an **opponent** of the source's controller, from any zone — "Noncreature spells your opponents cast cost {1} more to cast" (Thalia, the Survivor).
 - `SpellCostTarget.OpponentsCastFromZones(zones: Set<Zone>, filter: GameObjectFilter)` — Spells opponents of the source's controller cast **from one of zones**, matching filter (default: any spell).
 - `SpellCostTarget.OpponentsCastTargeting(targetFilter: GroupFilter)` — Spells opponents of the source's controller cast that target one or more permanents matching targetFilter relative to the source.
+- `SpellCostTarget.PlayerCasts(player: Player, filter: GameObjectFilter)` — Spells matching filter cast by the one player player names relative to the source — "Spells with the chosen name enchanted player casts cost {2} more to cast" (Curse of Silence, Player.EnchantedPla…
 - `SpellCostTarget.SelfCast` — Self-reduction on the spell card itself — applies when this card is cast.
 - `SpellCostTarget.YouCast(filter: GameObjectFilter)` — Spells the source's controller casts that match the filter.
 - `SpellCostTarget.YouCastFromZones(zones: Set<Zone>, filter: GameObjectFilter)` — Spells the source's controller casts **from one of zones**, matching filter (default: any spell).
@@ -1814,6 +1820,7 @@ Families:
 - `CantCastSpellsSharingColorWithLastCast` — Players can't cast a spell that shares a color with the spell most recently cast this turn.
 - `CantEnterTheBattlefield(filter: GameObjectFilter, fromZones: Set<Zone>?)` — Cards matching filter can't enter the battlefield from fromZones — an entry prohibition (CR 101.2: the "can't" wins over whatever effect directs the move).
 - `CantReceiveCounters(filter: GroupFilter)` — Prevents a permanent from having counters put on it.
+- `CardsInZonesCantBeTargeted(zones: Set<Zone>, filter: GameObjectFilter)` — Cards matching filter in zones can't be the targets of spells or abilities — "Cards in graveyards can't be the targets of spells or abilities" (Ground Seal; Dennick, Pious Apprentice).
 - `CastSpellTypesFromTopOfLibrary(filter: GameObjectFilter, maxCastsPerTurn: Int?, additionalCost: AdditionalCost?)` — You may cast spells matching a filter from the top of your library.
 - `ChangeAllColorWordsToChosenColor` — "All instances of color words in the text of spells and permanents are changed to the chosen color word." (Swirl the Mists) A global Layer 3 text-changing effect (CR 613.1c, CR 612).
 - `CompositeStaticAbility(abilities: List<StaticAbility>)` — A single static ability whose one continuous effect spans multiple Rule 613 layers, expressed as a bundle of component static abilities that share one identity (CR 613.6).
@@ -1975,6 +1982,7 @@ Families:
 - `SuccessCriterion.CountersRemoved` — Action succeeded iff the gated action actually *removed a counter* — at least one `CountersRemovedEvent` with a positive amount was emitted during the action.
 - `SuccessCriterion.DamageDealt(recipient: DamageRecipient)` — Action succeeded iff the gated action actually *dealt damage* — at least one point of damage was dealt by the effect's source during the action (a `DamageDealtEvent` with `amount > 0` whose source…
 - `SuccessCriterion.PermanentsSacrificed` — Action succeeded iff the gated action actually *sacrificed a permanent* — at least one `PermanentsSacrificedEvent` carrying a non-empty permanent list was emitted during the action.
+- `SuccessCriterion.Transformed` — Action succeeded iff the gated action actually *transformed a permanent* — a `TransformedEvent` was emitted during the action (CR 701.27).
 - `SuccessCriterion.TurnedFaceUp` — Action succeeded iff the gated action actually *turned a permanent face up* — a `TurnFaceUpEvent` was emitted during the action.
 
 ## TargetRequirement

@@ -3076,7 +3076,8 @@ sealed interface EventPattern : TextReplaceable<EventPattern> {
     }
 
     /**
-     * Whenever one or more cards matching [filter] are put into your graveyard from anywhere.
+     * Whenever one or more cards matching [filter] are put into a graveyard from anywhere —
+     * yours by default; [player] picks whose.
      *
      * This is a **batching trigger** — it fires at most once per event batch, regardless of
      * how many matching cards entered the graveyard, and regardless of which zone they came
@@ -3088,29 +3089,46 @@ sealed interface EventPattern : TextReplaceable<EventPattern> {
      *
      * Examples:
      * - "Whenever one or more permanent cards are put into your graveyard from anywhere"
-     *   → CardsPutIntoYourGraveyardEvent(filter = GameObjectFilter.Permanent)
+     *   → CardsPutIntoGraveyardEvent(filter = GameObjectFilter.Permanent)
      * - "Whenever one or more land cards are put into your graveyard from anywhere for the first
-     *   time each turn" → CardsPutIntoYourGraveyardEvent(filter = Land, firstTimeEachTurn = true)
+     *   time each turn" → CardsPutIntoGraveyardEvent(filter = Land, firstTimeEachTurn = true)
      *   (Crawling Sensation)
      *
      * [firstTimeEachTurn] fires only for the batch that carries the turn's *first* matching card
      * into your graveyard. It is turn history, not a cap on this trigger: a land that hit your
      * graveyard earlier in the turn — even before the source was on the battlefield — closes the
      * window, which is what separates it from `oncePerTurn`.
+     *
+     * [player] is whose graveyard: [Player.You] ("your graveyard", the default) or [Player.Any]
+     * ("graveyards" — Dennick, Pious Apparition's "one or more creature cards are put into
+     * graveyards from anywhere", one trigger per batch however many graveyards it touched).
      */
-    @SerialName("CardsPutIntoYourGraveyardEvent")
+    @SerialName("CardsPutIntoGraveyardEvent")
     @Serializable
-    data class CardsPutIntoYourGraveyardEvent(
+    data class CardsPutIntoGraveyardEvent(
         val filter: GameObjectFilter = GameObjectFilter.Any,
-        val firstTimeEachTurn: Boolean = false
+        val firstTimeEachTurn: Boolean = false,
+        val player: Player = Player.You
     ) : EventPattern {
+        init {
+            require(player == Player.You || player == Player.Any) {
+                "CardsPutIntoGraveyardEvent: player must be You or Any, was $player"
+            }
+            require(!firstTimeEachTurn || player == Player.You) {
+                "CardsPutIntoGraveyardEvent: firstTimeEachTurn is only modelled for your graveyard"
+            }
+        }
+
         override val description: String = buildString {
             append("one or more ")
             if (filter != GameObjectFilter.Any) {
                 append(filter.cardPredicates.joinToString(" ") { it.description })
                 append(" ")
             }
-            append("cards are put into your graveyard from anywhere")
+            append(
+                if (player == Player.Any) "cards are put into graveyards from anywhere"
+                else "cards are put into your graveyard from anywhere"
+            )
             if (firstTimeEachTurn) append(" for the first time each turn")
         }
 
@@ -3170,7 +3188,7 @@ sealed interface EventPattern : TextReplaceable<EventPattern> {
      *
      * This is a **batching trigger** (CR 603.2c) — it fires at most once per event batch,
      * regardless of how many cards were exiled or which of the watched zones each came from.
-     * Unlike [CardsPutIntoYourGraveyardEvent] / [CardsLeftYourGraveyardEvent] it is **not** scoped
+     * Unlike [CardsPutIntoGraveyardEvent] / [CardsLeftYourGraveyardEvent] it is **not** scoped
      * to a single player's zone: "from graveyards and/or the battlefield" means *any* graveyard and
      * *any* player's permanents, so every controller with this trigger sees the same batch.
      *

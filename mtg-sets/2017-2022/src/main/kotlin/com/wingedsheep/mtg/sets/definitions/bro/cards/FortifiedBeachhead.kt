@@ -44,7 +44,7 @@ val FortifiedBeachhead = card("Fortified Beachhead") {
                 ),
                 then = Effects.MayRevealCardFromHand(
                     filter = GameObjectFilter.Any.withSubtype(Subtype.SOLDIER),
-                    otherwise = Effects.Tap(EffectTarget.Self),
+                    otherwise = Effects.EnterTapped(),
                 ),
             )
         )

@@ -6870,10 +6870,7 @@
                     "then": {
                         "type": "Composite",
                         "effects": [
-                            {
-                                "type": "TapUntap",
-                                "target": "Self"
-                            },
+                            "EnterTapped",
                             {
                                 "type": "AddCounters",
                                 "counterType": "RAD",

@@ -34,7 +34,7 @@ val MariposaMilitaryBase = card("Mariposa Military Base") {
     replacementEffect(
         OnEnterRun(
             Effects.May(
-                Effects.Tap(EffectTarget.Self) then
+                Effects.EnterTapped() then
                     Effects.AddCounters(CounterType.RAD, 2, EffectTarget.Controller),
                 prompt = "Have Mariposa Military Base enter tapped to get two rad counters?",
                 descriptionOverride = "have this land enter tapped. If you do, you get two rad counters",

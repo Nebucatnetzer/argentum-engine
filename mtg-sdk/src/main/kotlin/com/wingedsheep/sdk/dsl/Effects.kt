@@ -3250,11 +3250,12 @@ object Effects {
         numericKeywords: List<KeywordAbility.Numeric> = emptyList(),
         attackDefender: com.wingedsheep.sdk.scripting.effects.EnteringAttackDefender =
             com.wingedsheep.sdk.scripting.effects.EnteringAttackDefender.JOIN_SOURCE,
+        attackedPlayer: EffectTarget? = null,
     ): CreateTokenEffect = CreateToken(
         DynamicAmount.Fixed(count), power, toughness, colors, creatureTypes, keywords, controller, imageUri,
         name, legendary, tapped, artifactToken, enchantmentToken, staticAbilities, exileAtStep,
         sacrificeAtStep, attacking, triggeredAbilities, activatedAbilities, dynamicPower, dynamicToughness,
-        initialCounters, stampCreator, numericKeywords, attackDefender,
+        initialCounters, stampCreator, numericKeywords, attackDefender, attackedPlayer,
     )
 
     /**
@@ -3267,6 +3268,8 @@ object Effects {
      * @param attackDefender What an [attacking] token attacks: the source's defending player
      *   (default) or, with `CONTROLLER_CHOOSES`, a player / planeswalker / battle its controller
      *   picks per token as it enters (CR 508.4).
+     * @param attackedPlayer "attacking **that player**" — or, with `CONTROLLER_CHOOSES`, "that player
+     *   or a planeswalker they control" (Adeline, Resplendent Cathar).
      * @param triggeredAbilities / [activatedAbilities] / [staticAbilities] The token's own abilities.
      * @param dynamicPower / [dynamicToughness] Base P/T evaluated at resolution, overriding
      *   [power] / [toughness] ("an X/X token").
@@ -3301,6 +3304,7 @@ object Effects {
         numericKeywords: List<KeywordAbility.Numeric> = emptyList(),
         attackDefender: com.wingedsheep.sdk.scripting.effects.EnteringAttackDefender =
             com.wingedsheep.sdk.scripting.effects.EnteringAttackDefender.JOIN_SOURCE,
+        attackedPlayer: EffectTarget? = null,
     ): CreateTokenEffect = CreateTokenEffect(
         count = count, power = power, toughness = toughness, colors = colors,
         creatureTypes = creatureTypes, keywords = keywords, name = name, imageUri = imageUri,
@@ -3310,7 +3314,7 @@ object Effects {
         staticAbilities = staticAbilities, triggeredAbilities = triggeredAbilities,
         activatedAbilities = activatedAbilities, exileAtStep = exileAtStep,
         sacrificeAtStep = sacrificeAtStep, initialCounters = initialCounters, stampCreator = stampCreator,
-        numericKeywords = numericKeywords, attackDefender = attackDefender,
+        numericKeywords = numericKeywords, attackDefender = attackDefender, attackedPlayer = attackedPlayer,
     )
 
     /**
@@ -4072,6 +4076,17 @@ object Effects {
     ): Effect = com.wingedsheep.sdk.scripting.effects.ChooseNumberForSourceEffect(
         minValue, maxValue, slot, prompt
     )
+
+    /**
+     * "Note [amount]" for the source permanent: evaluate it once and store it durably on the
+     * permanent under [slot] (replacing any prior note), read back as "the last noted …" through
+     * [com.wingedsheep.sdk.scripting.values.DynamicAmount.CastChoice]. Wrap in `OnEnterRun` for
+     * "as this enters, note …". Powers Sigarda's Splendor's noted life total.
+     */
+    fun NoteNumberForSource(
+        amount: DynamicAmount,
+        slot: com.wingedsheep.sdk.scripting.ChoiceSlot = com.wingedsheep.sdk.scripting.ChoiceSlot.NOTED_NUMBER
+    ): Effect = com.wingedsheep.sdk.scripting.effects.NoteNumberForSourceEffect(amount, slot)
 
     /**
      * The controller chooses an opponent, stored durably on the source entity under
@@ -5936,6 +5951,15 @@ object Effects {
      */
     fun Untap(target: EffectTarget): Effect =
         TapUntapEffect(target, tap = false)
+
+    /**
+     * "This permanent enters tapped" — the rider of an [com.wingedsheep.sdk.scripting.OnEnterRun]
+     * as-enters replacement ("you may reveal a Goblin card from your hand. If you don't, this land
+     * enters tapped"). An entry modification, not [Tap]: no "becomes tapped" event, and an
+     * "enters untapped" replacement (The Wandering Minstrel) overrides it.
+     */
+    fun EnterTapped(): Effect =
+        com.wingedsheep.sdk.scripting.effects.EnterTappedEffect
 
     /**
      * Unlock a locked door of a target Room (CR 709.5f) — the resolution-time "unlock" instruction.

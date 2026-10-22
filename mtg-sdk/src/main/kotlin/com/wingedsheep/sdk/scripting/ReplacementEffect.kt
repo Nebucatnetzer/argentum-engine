@@ -570,7 +570,7 @@ data class RedirectZoneChange(
  *
  * Use this to compose ETB-time choices out of existing atoms — e.g. SOI shadow
  * lands wrap [com.wingedsheep.sdk.scripting.effects.MayRevealCardFromHandEffect]
- * with `otherwise = Effects.Tap(EffectTarget.Self)`; a future "as ~ enters,
+ * with `otherwise = Effects.EnterTapped()`; a future "as ~ enters,
  * sacrifice another creature" land could wrap `Effects.Sacrifice(filter)`.
  *
  * Distinct from a "when ~ enters" [com.wingedsheep.sdk.scripting.trigger.Trigger]:
@@ -595,6 +595,96 @@ data class OnEnterRun(
         return if (newEffect !== effect || newAppliesTo !== appliesTo)
             copy(effect = newEffect, appliesTo = newAppliesTo)
         else this
+    }
+}
+
+/**
+ * "As this permanent transforms into [this face], attach it to a player." — the as-transforms
+ * replacement of a transforming card's **Aura** face that enchants a player (Curse of Leeches).
+ * CR 712.20: an "As [this permanent] transforms …" ability of the face it transforms into is applied
+ * *while* it transforms, not afterward — so the Aura is never an unattached Aura that the CR 704.5m
+ * state-based action would put into the graveyard.
+ *
+ * The permanent's controller chooses any player the Aura could enchant. Attaching doesn't target
+ * (a player with hexproof can be chosen), but player protection from the Aura still rules a player
+ * out (CR 702.16c); with no player to choose the Aura stays unattached and 704.5m applies.
+ * Read off the face's own definition at the moment of the transform and never consulted for other
+ * permanents; entering the battlefield face up is not a transform (the card's own ruling), so it
+ * doesn't apply then.
+ *
+ * [appliesTo] is nominal: the engine reads the ability off the face as `flipDfcInPlace` turns it over
+ * and never matches it against events.
+ *
+ * Not [OnEnterRun]: that runs an effect *as the permanent enters*, through the resolving effect
+ * pipeline, and a daybound transform happens in the untap step's turn-based day/night change, where
+ * no effect is resolving. Not [com.wingedsheep.sdk.scripting.effects.AttachToChosenHostEffect]:
+ * that one-shot moves an attachment onto a chosen *permanent* at resolution and has no player hosts.
+ */
+@SerialName("AttachToPlayerAsTransforms")
+@Serializable
+data class AttachToPlayerAsTransforms(
+    override val appliesTo: EventPattern = EventPattern.TransformEvent()
+) : ReplacementEffect {
+    override val description: String = "As this permanent transforms into this face, attach it to a player"
+
+    override fun applyTextReplacement(replacer: TextReplacer): ReplacementEffect {
+        val newAppliesTo = appliesTo.applyTextReplacement(replacer)
+        return if (newAppliesTo !== appliesTo) copy(appliesTo = newAppliesTo) else this
+    }
+}
+
+/**
+ * "As this creature transforms into [this face], it becomes a copy of a [copyFilter] card …, except
+ * …. Put a number of [counterType] counters on it equal to [counterCount]." — the as-transforms copy
+ * of Olag, Ludevic's Hubris, the back face of Ludevic, Necrogenius.
+ *
+ * CR 712.20: an "As [this permanent] transforms …" ability of the face it transforms into is applied
+ * *while* it transforms — the permanent never exists as its plain printed face first. Its controller
+ * chooses one card in [copyFromZone] matching [copyFilter], read with the transforming permanent as
+ * the source (so `GameObjectFilter.Creature.exiledWithSource()` is "a creature card exiled with
+ * it", CR 607.2a), and the permanent becomes a copy of it (CR 707.2) for as long as it remains on
+ * the battlefield — even after the copied card leaves exile, and across a later transform, which
+ * turns the card over without changing the characteristics the copy effect sets. [exceptions] is the
+ * shared CR 707.9b "except …" vocabulary. With no card to choose it isn't a copy of anything and keeps
+ * its printed face. [counterCount] (when non-null) is then evaluated with the permanent as the source
+ * and that many [counterType] counters are put on it, copy or not.
+ *
+ * Read off the face's own definition at the moment of the transform and never consulted otherwise;
+ * entering the battlefield transformed is not a transform, so it doesn't apply then. [appliesTo] is
+ * nominal, as on [AttachToPlayerAsTransforms].
+ *
+ * Not [EntersAsCopy]: that is an entry replacement, read on every path a permanent enters by, and a
+ * transform is not an entry. Not [AttachToPlayerAsTransforms]: that one's choice is a player to
+ * attach to, not a card to copy. Both are settled at the first moment the engine can ask after the
+ * flip — the state-based action pass (`TransformCopy` and `TransformAttachToPlayer` in the engine).
+ */
+@SerialName("BecomesCopyAsTransforms")
+@Serializable
+data class BecomesCopyAsTransforms(
+    val copyFilter: GameObjectFilter = GameObjectFilter.Creature,
+    val copyFromZone: Zone = Zone.EXILE,
+    val exceptions: com.wingedsheep.sdk.scripting.effects.CopyExceptions =
+        com.wingedsheep.sdk.scripting.effects.CopyExceptions.None,
+    val counterType: CounterType = CounterType.PLUS_ONE_PLUS_ONE,
+    val counterCount: DynamicAmount? = null,
+    override val appliesTo: EventPattern = EventPattern.TransformEvent()
+) : ReplacementEffect {
+    override val description: String = buildString {
+        append("As this creature transforms, it becomes a copy of a ${copyFilter.description}")
+        if (copyFromZone != Zone.EXILE) append(" in a ${copyFromZone.name.lowercase()}")
+        val clauses = exceptions.clauses()
+        if (clauses.isNotEmpty()) append(", except ${clauses.joinToString(" and ")}")
+        counterCount?.let {
+            val plusOne = counterType == CounterType.PLUS_ONE_PLUS_ONE
+            append(". Put ${it.description} ${if (plusOne) "+1/+1" else counterType.printed} counters on it")
+        }
+    }
+
+    override fun applyTextReplacement(replacer: TextReplacer): ReplacementEffect {
+        val newFilter = copyFilter.applyTextReplacement(replacer)
+        val newExceptions = exceptions.applyTextReplacement(replacer)
+        return if (newFilter !== copyFilter || newExceptions !== exceptions)
+            copy(copyFilter = newFilter, exceptions = newExceptions) else this
     }
 }
 
@@ -1932,6 +2022,59 @@ data class LifeLossFloor(
         val anyChanged = newAppliesTo !== appliesTo ||
             newRestrictions.zip(restrictions).any { (n, o) -> n !== o }
         return if (anyChanged) copy(appliesTo = newAppliesTo, restrictions = newRestrictions) else this
+    }
+}
+
+/**
+ * "If your life total would be reduced to 0 or less, instead …" — the replaced reduction runs [instead] (Enduring Angel).
+ *
+ * Replaces **every** reduction of a matching player's life total that would leave it at 0 or less:
+ * damage (combat and noncombat, CR 120.3a), "loses N life" effects, life payments, and effects that
+ * set or exchange a life total (CR 119.5 — setting a life total lower is a loss of life). The whole
+ * reduction is replaced: the life total doesn't change, and [instead] runs in its place as part of
+ * the same replacement — no stack, no priority, before state-based actions — with this permanent as
+ * its source and its controller as "you". The damage itself is still dealt, so lifelink and
+ * damage-dealt triggers see it in full. Simultaneous reductions (several attackers' combat damage)
+ * are one event: once it has applied, the rest of that event's reductions of the same player are
+ * absorbed too, and [instead] runs once.
+ *
+ * Enduring Angel: `ReplaceLifeReductionToZero(instead = IfYouDo(Transform(Self), SetLifeTotal(3),
+ * otherwise = SetLifeTotal(3) then LoseGame, successCriterion = Transformed))`.
+ *
+ * Why not an existing type: [LifeLossFloor] caps only damage-caused loss and writes a number — it
+ * can't run an effect or see payments and set-life effects; [ModifyLifeLoss] scales an amount that
+ * still happens. Neither has a threshold on the *resulting* life total.
+ *
+ * @param instead What happens in place of the reduction.
+ * @param restrictions Additional [Condition]s gating when this applies, evaluated against the
+ *        source's controller; ALL must hold.
+ * @param appliesTo Life-loss event filter (whose life total is protected; default "your").
+ */
+@SerialName("ReplaceLifeReductionToZero")
+@Serializable
+data class ReplaceLifeReductionToZero(
+    val instead: Effect,
+    override val restrictions: List<Condition> = emptyList(),
+    override val appliesTo: EventPattern = EventPattern.LifeLossEvent(Player.You)
+) : ReplacementEffect {
+    override val description: String = buildString {
+        append("If ")
+        when ((appliesTo as? EventPattern.LifeLossEvent)?.player) {
+            Player.You -> append("your")
+            Player.EachOpponent -> append("an opponent's")
+            else -> append("a player's")
+        }
+        append(" life total would be reduced to 0 or less, instead ")
+        append(instead.description.replaceFirstChar { it.lowercase() })
+    }
+
+    override fun applyTextReplacement(replacer: TextReplacer): ReplacementEffect {
+        val newInstead = instead.applyTextReplacement(replacer)
+        val newAppliesTo = appliesTo.applyTextReplacement(replacer)
+        val newRestrictions = restrictions.map { it.applyTextReplacement(replacer) }
+        val anyChanged = newInstead !== instead || newAppliesTo !== appliesTo ||
+            newRestrictions.zip(restrictions).any { (n, o) -> n !== o }
+        return if (anyChanged) copy(instead = newInstead, appliesTo = newAppliesTo, restrictions = newRestrictions) else this
     }
 }
 

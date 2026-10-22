@@ -84,6 +84,9 @@ class TapEventEnforcementTest : FunSpec({
             "com/wingedsheep/engine/state/GameState.kt",
             // A land played from a permission that forces it tapped enters tapped — not a transition.
             "com/wingedsheep/engine/handlers/actions/land/PlayLandHandler.kt",
+            // The "if you don't, this land enters tapped" rider of an OnEnterRun as-enters
+            // replacement (reveal lands, snarls) — the permanent enters tapped, not a transition.
+            "com/wingedsheep/engine/handlers/effects/permanent/tapping/EnterTappedExecutor.kt",
             // Shock-land "pay life or enter tapped": declining to pay makes the land/permanent
             // *enter* tapped (CR 614 replacement on entry), which is not a tap transition.
             "com/wingedsheep/engine/handlers/continuations/ModalAndCloneContinuationResumer.kt",

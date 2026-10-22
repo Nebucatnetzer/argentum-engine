@@ -8,7 +8,6 @@ import com.wingedsheep.sdk.scripting.AbilityCost
 import com.wingedsheep.sdk.scripting.GameObjectFilter
 import com.wingedsheep.sdk.scripting.OnEnterRun
 import com.wingedsheep.sdk.scripting.TimingRule
-import com.wingedsheep.sdk.scripting.targets.EffectTarget
 
 /**
  * Necroblossom Snarl
@@ -32,7 +31,7 @@ val NecroblossomSnarl = card("Necroblossom Snarl") {
         OnEnterRun(
             Effects.MayRevealCardFromHand(
                 filter = GameObjectFilter.Land.withAnySubtype("Swamp", "Forest"),
-                otherwise = Effects.Tap(EffectTarget.Self),
+                otherwise = Effects.EnterTapped(),
             )
         )
     )

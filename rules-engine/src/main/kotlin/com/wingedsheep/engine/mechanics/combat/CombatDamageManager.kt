@@ -429,9 +429,13 @@ internal class CombatDamageManager(
         // this way" shields (Candles' Glow), summed over the step and gained once per controller
         // afterwards — the step is one simultaneous damage event (CR 510.2).
         val preventionLifeGains = linkedMapOf<EntityId, Int>()
+        val lifeBeforeStep = newState.turnOrder.associate { newState.teamLifeOwnerOf(it) to newState.lifeTotal(it) }
+        val ridersBeforeStep = newState.pendingReplacementRiders.size
+        val eventsBeforeStep = events.size
         for (assignment in finalAssignments) {
             newState = applySingleAssignment(newState, assignment, events, healProcessedTargets, preventionLifeGains)
         }
+        newState = replaceWholeStepLifeReduction(newState, lifeBeforeStep, ridersBeforeStep, events, eventsBeforeStep)
         for ((controllerId, gained) in preventionLifeGains) {
             val (gainedState, gainEvent) = DamageUtils.gainLife(newState, controllerId, gained, predicateEvaluator = predicateEvaluator)
             newState = gainedState
@@ -482,6 +486,32 @@ internal class CombatDamageManager(
 )
 
     /** Stable wire id for a damage edge. The resumer reads source/target off the edge, never parses this. */
+    /**
+     * The step's combat damage is one simultaneous event (CR 510.2), but it is applied one assignment
+     * at a time. When a life-reduction replacement ([com.wingedsheep.sdk.scripting.ReplaceLifeReductionToZero])
+     * applied to a player during the step, the *whole* reduction was replaced — including the
+     * non-lethal hits applied before the lethal one. Restore that player's life total to its value
+     * before the step and drop the step's life-change events for them; the damage itself stays dealt.
+     */
+    private fun replaceWholeStepLifeReduction(
+        state: GameState,
+        lifeBeforeStep: Map<EntityId, Int>,
+        ridersBeforeStep: Int,
+        events: MutableList<GameEvent>,
+        eventsBeforeStep: Int
+    ): GameState {
+        val replaced = state.pendingReplacementRiders.drop(ridersBeforeStep)
+            .filter { it.replacesLifeReduction }.map { it.subjectId }.toSet()
+        if (replaced.isEmpty()) return state
+        var newState = state
+        for (owner in replaced) {
+            lifeBeforeStep[owner]?.let { newState = newState.withLifeTotal(owner, it) }
+        }
+        events.subList(eventsBeforeStep, events.size)
+            .removeAll { it is LifeChangedEvent && newState.teamLifeOwnerOf(it.playerId) in replaced }
+        return newState
+    }
+
     private fun edgeId(sourceId: EntityId, targetId: EntityId): String = "$sourceId->$targetId"
 
     /**
@@ -1303,8 +1333,8 @@ internal class CombatDamageManager(
         val currentLife = newState.lifeTotal(targetId)
         var lifeLossAmount = DamageUtils.applyStaticLifeLossModification(newState, targetId, effectiveAmount, predicateEvaluator = predicateEvaluator)
         lifeLossAmount = DamageUtils.applyLifeLossFloors(newState, targetId, currentLife, lifeLossAmount, predicateEvaluator = predicateEvaluator)
-        val newLife = currentLife - lifeLossAmount
-        newState = newState.withLifeTotal(targetId, newLife)
+        val (written, newLife) = DamageUtils.writeLifeReduction(newState, targetId, currentLife, currentLife - lifeLossAmount, predicateEvaluator)
+        newState = written
         newState = DamageUtils.trackDamageReceivedByPlayer(newState, targetId, effectiveAmount, sourceId, isCombatDamage = true)
 
         // Track combat damage: source dealt damage + dealt combat damage to player
@@ -1561,8 +1591,9 @@ internal class CombatDamageManager(
             // CR 810.9 — applies to the team's shared total (isPlayer already guards presence).
             val currentLife = newState.lifeTotal(targetId)
             // CR 119.8 — damage to a player who can't lose life leaves the total unchanged.
-            val newLife = if (newState.isLifeLossLocked(targetId)) currentLife else currentLife - amount
-            newState = newState.withLifeTotal(targetId, newLife)
+            val (written, newLife) = if (newState.isLifeLossLocked(targetId)) newState to currentLife
+                else DamageUtils.writeLifeReduction(newState, targetId, currentLife, currentLife - amount, predicateEvaluator)
+            newState = written
             newState = DamageUtils.trackDamageReceivedByPlayer(newState, targetId, amount, sourceId, isCombatDamage = true)
             // Track combat damage: source dealt damage + dealt combat damage to player
             newState = DamageUtils.trackDamageDealt(newState, sourceId, amount, isCombatDamage = true)
@@ -1790,8 +1821,9 @@ internal class CombatDamageManager(
         // CR 810.9 — applies to the attacking player's team's shared total.
         val attackerControllerLife = state.lifeTotal(attackerController)
         // CR 119.8 — a player who can't lose life takes the reflected damage without losing life.
-        val newLife = if (state.isLifeLossLocked(attackerController)) attackerControllerLife else attackerControllerLife - originalAmount
-        var newState = state.withLifeTotal(attackerController, newLife)
+        val (written, newLife) = if (state.isLifeLossLocked(attackerController)) state to attackerControllerLife
+            else DamageUtils.writeLifeReduction(state, attackerController, attackerControllerLife, attackerControllerLife - originalAmount, predicateEvaluator)
+        var newState = written
         newState = DamageUtils.trackDamageReceivedByPlayer(newState, attackerController, originalAmount, sourceId)
         // Reflection is an additional damage event from the attacking creature, so it adds
         // its full amount to the same source's damage history.

@@ -726,6 +726,12 @@ class StaticAbilityHandler(
                 modification = Modification.GrantStaticAbility(ability),
                 affectsFilter = AffectsFilter.Self,
             )
+            // Read at every targeting site from the holder's projected statics
+            // (UntargetableByRules.zoneLocks), so losing all abilities lifts the lock.
+            is com.wingedsheep.sdk.scripting.CardsInZonesCantBeTargeted -> ContinuousEffectData(
+                modification = Modification.GrantStaticAbility(ability),
+                affectsFilter = AffectsFilter.Self,
+            )
             is com.wingedsheep.sdk.scripting.GrantStaticAbility -> ContinuousEffectData(
                 modification = Modification.GrantStaticAbility(ability.ability),
                 affectsFilter = convertGroupFilter(ability.filter),
@@ -1397,6 +1403,7 @@ class StaticAbilityHandler(
             is com.wingedsheep.sdk.scripting.ReplaceLifeGainWith,
             is com.wingedsheep.sdk.scripting.ModifyLifeLoss,
             is com.wingedsheep.sdk.scripting.LifeLossFloor,
+            is com.wingedsheep.sdk.scripting.ReplaceLifeReductionToZero,
             is com.wingedsheep.sdk.scripting.GainLifeInsteadOfLosingLife,
             // Life payment (Ashiok, Wicked Manipulator) — consulted from the battlefield by
             // LifePaymentService every time its controller would pay life.
@@ -1450,7 +1457,10 @@ class StaticAbilityHandler(
             is com.wingedsheep.sdk.scripting.EntersWithDevour,
             is com.wingedsheep.sdk.scripting.EntersWithRevealCounters,
             is com.wingedsheep.sdk.scripting.EntersWithExileCounters,
-            is com.wingedsheep.sdk.scripting.OnEnterRun -> false
+            is com.wingedsheep.sdk.scripting.OnEnterRun,
+            // Transform-time: read off the new face by flipDfcInPlace as it turns over (CR 712.20).
+            is com.wingedsheep.sdk.scripting.AttachToPlayerAsTransforms,
+            is com.wingedsheep.sdk.scripting.BecomesCopyAsTransforms -> false
         }
 
     /**

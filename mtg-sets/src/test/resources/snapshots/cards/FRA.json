@@ -17449,10 +17449,7 @@
                 "effect": {
                     "type": "Behold",
                     "filter": "Jace",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]

@@ -67,6 +67,7 @@ import com.wingedsheep.engine.handlers.effects.permanent.phasing.PhaseInLinkedTo
 import com.wingedsheep.engine.handlers.effects.permanent.tapping.TapUntapCollectionExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.room.LockDoorExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.room.UnlockDoorExecutor
+import com.wingedsheep.engine.handlers.effects.permanent.tapping.EnterTappedExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.tapping.TapUntapExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.types.AddCardTypeExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.types.AddColorExecutor
@@ -253,6 +254,7 @@ class PermanentExecutors(
         EmitConnivedEventExecutor(),
         // tapping
         TapUntapExecutor(),
+        EnterTappedExecutor(predicateEvaluator = zones.predicateEvaluator),
         TapUntapCollectionExecutor(),
         // rooms / doors
         UnlockDoorExecutor(staticAbilityHandler),

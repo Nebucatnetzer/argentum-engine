@@ -2,6 +2,8 @@ package com.wingedsheep.engine.mechanics.mana
 import com.wingedsheep.engine.state.components.battlefield.chosenCreatureOf
 import com.wingedsheep.engine.state.components.battlefield.chosenSubtype
 import com.wingedsheep.engine.state.components.battlefield.chosenColor
+import com.wingedsheep.engine.state.components.battlefield.chosenOpponent
+import com.wingedsheep.engine.state.components.battlefield.chosenPlayer
 import com.wingedsheep.engine.state.components.battlefield.CastChoicesComponent
 import com.wingedsheep.engine.state.components.battlefield.ChoiceValue
 
@@ -52,6 +54,7 @@ import com.wingedsheep.sdk.scripting.values.DynamicAmount
 import com.wingedsheep.engine.state.components.stack.ChosenTarget
 import com.wingedsheep.engine.handlers.PredicateContext
 import com.wingedsheep.sdk.scripting.predicates.CardPredicate
+import com.wingedsheep.sdk.scripting.references.Player
 
 /**
  * Calculates effective spell costs after applying cost reductions.
@@ -395,6 +398,9 @@ class CostCalculator(
             }
             is SpellCostTarget.AnyCaster -> matchesCardDefinition(cardDef, target.filter, sourceId, state, state.projectedState)
             is SpellCostTarget.OpponentsCast -> opponentsCastMatches(target, cardDef, casterId, sourceId, state)
+            is SpellCostTarget.PlayerCasts ->
+                namedPlayerOf(state, sourceId, target.player) == casterId &&
+                    matchesCardDefinition(cardDef, target.filter, sourceId, state, state.projectedState)
             is SpellCostTarget.OpponentsCastTargeting ->
                 opponentsCastTargetingMatches(state, casterId, sourceId, target.targetFilter, chosenTargets)
             is SpellCostTarget.OpponentsCastFromZones -> {
@@ -418,6 +424,23 @@ class CostCalculator(
             // calculateFaceDownCost / calculateMorphCostIncrease.
             SpellCostTarget.FaceDownYouCast -> false
             SpellCostTarget.MorphActivation -> false
+        }
+    }
+
+    /**
+     * The single player [player] names on the cost modifier's source, for
+     * [SpellCostTarget.PlayerCasts]: the player an "enchant player" Aura is attached to, or the
+     * opponent / player recorded as the source entered. Null — no caster is taxed — when the
+     * source names nobody right now.
+     */
+    private fun namedPlayerOf(state: GameState, sourceId: EntityId, player: Player): EntityId? {
+        val source = state.getEntity(sourceId) ?: return null
+        return when (player) {
+            Player.EnchantedPlayer ->
+                com.wingedsheep.engine.handlers.effects.TargetResolutionUtils.enchantedPlayer(sourceId, state)
+            Player.ChosenOpponent -> source.chosenOpponent()
+            Player.ChosenPlayer -> source.chosenPlayer()
+            else -> null
         }
     }
 
@@ -514,6 +537,7 @@ class CostCalculator(
         is SpellCostTarget.YouCast -> target.filter
         is SpellCostTarget.AnyCaster -> target.filter
         is SpellCostTarget.OpponentsCast -> target.filter
+        is SpellCostTarget.PlayerCasts -> target.filter
         else -> null  // Gating requires a filter to know what "of type" means.
     }
 
@@ -685,7 +709,8 @@ class CostCalculator(
             is CostReductionSource.PermanentsSacrificedThisTurn ->
                 state.permanentsSacrificedThisTurn * source.amountPerPermanent
             is CostReductionSource.CreaturesThatAttackedThisTurn ->
-                countCreaturesThatAttackedThisTurn(state) * source.amountPerCreature
+                countCreaturesThatAttackedThisTurn(state, if (source.yoursOnly) playerId else null) *
+                    source.amountPerCreature
             is CostReductionSource.CardTypesInYourGraveyard ->
                 countGraveyardCardTypes(state, playerId) * source.amountPerType
             is CostReductionSource.SharedCardTypesWithLinkedExile ->
@@ -734,7 +759,8 @@ class CostCalculator(
             .size
 
     /**
-     * The number of creatures declared as attackers this turn by any player, across every combat
+     * The number of creatures declared as attackers this turn by any player — or only by
+     * [onlyPlayer] ("creatures you attacked with"), when given — across every combat
      * phase. Reads the per-player `PlayerAttackersThisTurnComponent` sets that
      * `AttackPhaseManager` unions at each declare-attackers step, so an attacker that has since
      * died, been exiled, or been bounced still counts — the count is turn history, not a
@@ -743,8 +769,8 @@ class CostCalculator(
      * A creature can only be declared as an attacker once per combat and the sets are per
      * controller, so no de-duplication across players is needed.
      */
-    private fun countCreaturesThatAttackedThisTurn(state: GameState): Int =
-        state.turnOrder.sumOf { playerId ->
+    private fun countCreaturesThatAttackedThisTurn(state: GameState, onlyPlayer: EntityId?): Int =
+        (onlyPlayer?.let(::listOf) ?: state.turnOrder).sumOf { playerId ->
             state.getEntity(playerId)
                 ?.get<PlayerAttackersThisTurnComponent>()
                 ?.attackerIds

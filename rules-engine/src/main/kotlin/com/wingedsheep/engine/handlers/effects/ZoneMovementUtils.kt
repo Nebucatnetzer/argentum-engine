@@ -527,6 +527,8 @@ object ZoneMovementUtils {
             .without<com.wingedsheep.engine.state.components.identity.RingBearerComponent>()
             // Battlefield
             .without<TappedComponent>()
+            .without<com.wingedsheep.engine.state.components.battlefield.PendingTransformAttachComponent>()
+            .without<com.wingedsheep.engine.state.components.battlefield.PendingTransformCopyComponent>()
             .without<SummoningSicknessComponent>()
             .without<CastFromHandComponent>()
             .without<com.wingedsheep.engine.state.components.battlefield.WasCastComponent>()

@@ -2962,10 +2962,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "land Island|Mountain",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]
@@ -4381,10 +4378,7 @@
                 "effect": {
                     "type": "MayRevealCardFromHand",
                     "filter": "land Swamp|Forest",
-                    "otherwise": {
-                        "type": "TapUntap",
-                        "target": "Self"
-                    }
+                    "otherwise": "EnterTapped"
                 }
             }
         ]

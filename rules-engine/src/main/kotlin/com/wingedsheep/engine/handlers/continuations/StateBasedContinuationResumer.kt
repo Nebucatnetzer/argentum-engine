@@ -2,6 +2,8 @@ package com.wingedsheep.engine.handlers.continuations
 
 import com.wingedsheep.engine.core.*
 import com.wingedsheep.engine.handlers.effects.ZoneTransitionService
+import com.wingedsheep.engine.handlers.effects.permanent.attachments.TransformAttachToPlayer
+import com.wingedsheep.engine.handlers.effects.permanent.types.TransformCopy
 import com.wingedsheep.engine.mechanics.sba.SbaZoneMovementHelper
 import com.wingedsheep.engine.mechanics.sba.permanent.ProtectorAssignment
 import com.wingedsheep.engine.state.GameState
@@ -17,7 +19,55 @@ class StateBasedContinuationResumer(
         resumer(LegendRuleContinuation::class, ::resumeLegendRule),
         resumer(CommanderZoneChoiceContinuation::class, ::resumeCommanderZoneChoice),
         resumer(BattleProtectorChoiceContinuation::class, ::resumeBattleProtectorChoice),
+        resumer(TransformAttachToPlayerContinuation::class, ::resumeTransformAttachToPlayer),
+        resumer(TransformCopyContinuation::class, ::resumeTransformCopy),
     )
+
+    /**
+     * Attach the transformed Aura to the player its controller picked (CR 712.20), then settle any
+     * other permanent that transformed into an attach-to-a-player face in the same batch before the
+     * interrupted flow — the untap step, or the state-based action loop — carries on.
+     */
+    private fun resumeTransformAttachToPlayer(
+        state: GameState,
+        continuation: TransformAttachToPlayerContinuation,
+        response: DecisionResponse,
+        checkForMore: CheckForMore
+    ): ExecutionResult {
+        if (response !is OptionChosenResponse) {
+            return ExecutionResult.error(state, "Expected option response for attaching a transformed Aura")
+        }
+        val playerId = continuation.candidateIds.getOrNull(response.optionIndex)
+            ?: return ExecutionResult.error(state, "Invalid player option index ${response.optionIndex}")
+        val (attached, events) = TransformAttachToPlayer.attach(state, continuation.auraId, playerId)
+        val settled = TransformAttachToPlayer.settle(attached, services.cardRegistry, services.zones.predicateEvaluator, events)
+        if (settled != null && settled.outcome !is Outcome.Done) return settled
+        return checkForMore(settled?.state ?: attached, settled?.events ?: events)
+    }
+
+    /**
+     * Make the transformed permanent a copy of the card its controller picked (CR 712.20), then
+     * settle any other permanent that transformed into a becomes-a-copy face in the same batch before
+     * the state-based action loop carries on.
+     */
+    private fun resumeTransformCopy(
+        state: GameState,
+        continuation: TransformCopyContinuation,
+        response: DecisionResponse,
+        checkForMore: CheckForMore
+    ): ExecutionResult {
+        if (response !is CardsSelectedResponse) {
+            return ExecutionResult.error(state, "Expected card selection for a transform copy")
+        }
+        val copiedId = response.selectedCards.singleOrNull()?.takeIf { it in continuation.candidateIds }
+            ?: return ExecutionResult.error(state, "Choose exactly one of the offered cards to copy")
+        val (copied, events) = TransformCopy.apply(
+            state, continuation.permanentId, copiedId, services.cardRegistry, services.zones.predicateEvaluator
+        )
+        val settled = TransformCopy.settle(copied, services.cardRegistry, services.zones.predicateEvaluator, events)
+        if (settled != null && settled.outcome !is Outcome.Done) return settled
+        return checkForMore(settled?.state ?: copied, settled?.events ?: events)
+    }
 
     /**
      * Apply the protector a battle's controller picked for the CR 704.5x/y state-based action.

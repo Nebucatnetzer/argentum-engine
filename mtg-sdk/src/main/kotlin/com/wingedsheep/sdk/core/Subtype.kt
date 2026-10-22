@@ -205,6 +205,7 @@ value class Subtype(val value: String) {
         val BACKGROUND = Subtype("Background")
         val CASE = Subtype("Case")
         val CLASS = Subtype("Class")
+        val CURSE = Subtype("Curse")
         val ROLE = Subtype("Role")
         val ROOM = Subtype("Room")
         val SAGA = Subtype("Saga")
@@ -318,14 +319,14 @@ value class Subtype(val value: String) {
             "Faerie", "Ferret", "Fish", "Flagbearer", "Fox", "Fractal", "Frog",
             "Fungus",
             "Gamer", "Gamma", "Gargoyle", "Germ", "Giant", "Gith", "Glimmer",
-            "Gnoll", "Gnome", "Goat", "Goblin", "God", "Golem", "Gorgon",
+            "Gnoll", "Gnome", "Goat", "Goblin", "God", "Golem", "Gorgon", "Gorn",
             "Graveborn", "Gremlin", "Griffin", "Guest",
             "Hag", "Halfling", "Hamster", "Harpy", "Hedgehog", "Hellion", "Hero",
             "Hippo", "Hippogriff", "Homarid", "Homunculus", "Horror", "Horse",
             "Human", "Hydra", "Hyena",
             "Illusion", "Imp", "Incarnation", "Inkling", "Inquisitor", "Insect",
             "Jackal", "Jellyfish", "Juggernaut",
-            "Kangaroo", "Kavu", "Kirin", "Kithkin", "Knight", "Kobold", "Kor",
+            "Kangaroo", "Kavu", "Kirin", "Kithkin", "Klingon", "Knight", "Kobold", "Kor",
             "Kraken",
             "Lamia", "Lammasu", "Leech", "Lemur", "Leviathan", "Lhurgoyf", "Licid",
             "Lizard", "Llama", "Lobster",
@@ -334,7 +335,7 @@ value class Subtype(val value: String) {
             "Moogle", "Moonfolk", "Mount", "Mouse", "Mutant", "Myr", "Mystic",
             "Nautilus", "Necron", "Nephilim", "Nightmare", "Nightstalker", "Ninja",
             "Noble", "Noggle", "Nomad", "Nymph",
-            "Octopus", "Ogre", "Ooze", "Orb", "Orc", "Orgg", "Otter", "Ouphe", "Ox",
+            "Octopus", "Officer", "Ogre", "Ooze", "Orb", "Orc", "Orgg", "Otter", "Ouphe", "Ox",
             "Oyster",
             "Pangolin", "Peasant", "Pegasus", "Pentavite", "Performer", "Pest",
             "Phelddagrif", "Phoenix", "Phyrexian", "Pilot", "Pincher", "Pirate",

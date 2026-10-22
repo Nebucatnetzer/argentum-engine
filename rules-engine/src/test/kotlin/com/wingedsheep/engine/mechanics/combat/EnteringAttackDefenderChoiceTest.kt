@@ -8,6 +8,7 @@ import com.wingedsheep.engine.state.components.battlefield.TappedComponent
 import com.wingedsheep.engine.state.components.combat.AttackingComponent
 import com.wingedsheep.engine.state.components.combat.BeingAttackedComponent
 import com.wingedsheep.engine.state.components.identity.TokenComponent
+import com.wingedsheep.engine.state.components.stack.ChosenTarget
 import com.wingedsheep.engine.support.GameTestDriver
 import com.wingedsheep.engine.support.TestCards
 import com.wingedsheep.sdk.core.Color
@@ -19,12 +20,15 @@ import com.wingedsheep.sdk.dsl.card
 import com.wingedsheep.sdk.model.Deck
 import com.wingedsheep.sdk.model.EntityId
 import com.wingedsheep.sdk.scripting.effects.CreateTokenCopyOfTargetEffect
+import com.wingedsheep.sdk.scripting.effects.CreateTokenEffect
 import com.wingedsheep.sdk.scripting.effects.EnteringAttackDefender
+import com.wingedsheep.sdk.scripting.references.Player
 import com.wingedsheep.sdk.scripting.targets.EffectTarget
 import io.kotest.assertions.throwables.shouldThrow
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
 import io.kotest.matchers.collections.shouldContainExactly
+import io.kotest.matchers.collections.shouldContainExactlyInAnyOrder
 import io.kotest.matchers.collections.shouldHaveSize
 import io.kotest.matchers.shouldBe
 import io.kotest.matchers.shouldNotBe
@@ -38,6 +42,9 @@ import io.kotest.matchers.types.shouldBeInstanceOf
  *
  * Also CR 506.3b (a creature put onto the battlefield attacking under a player who isn't attacking
  * never attacks) and that the default [EnteringAttackDefender.JOIN_SOURCE] is untouched.
+ *
+ * A named `attackedPlayer` with CONTROLLER_CHOOSES is "attacking that player or a planeswalker they
+ * control" — the choice narrows to that player and their planeswalkers (Adeline, Resplendent Cathar).
  */
 class EnteringAttackDefenderChoiceTest : FunSpec({
 
@@ -84,6 +91,28 @@ class EnteringAttackDefenderChoiceTest : FunSpec({
         }
     }
 
+    // "Whenever you attack, for each opponent, create a 1/1 token that's tapped and attacking that
+    // player or a planeswalker they control." — the loop rebinds Controller to the visited opponent.
+    val rallyingCathar = card("Test Rallying Cathar") {
+        manaCost = "{1}{W}{W}"
+        typeLine = "Creature — Human Knight"
+        power = 2
+        toughness = 2
+        triggeredAbility {
+            trigger = Triggers.you.attacks()
+            effect = Effects.ForEachPlayer(
+                Player.EachOpponent,
+                Effects.CreateToken(
+                    power = 1, toughness = 1, colors = setOf(Color.WHITE), creatureTypes = setOf("Human"),
+                    controller = EffectTarget.PlayerRef(Player.ControllerOfSource),
+                    tapped = true, attacking = true,
+                    attackDefender = EnteringAttackDefender.CONTROLLER_CHOOSES,
+                    attackedPlayer = EffectTarget.Controller,
+                ),
+            )
+        }
+    }
+
     val walker = card("Test Defending Walker") {
         manaCost = "{3}"
         typeLine = "Legendary Planeswalker — Test"
@@ -100,7 +129,7 @@ class EnteringAttackDefenderChoiceTest : FunSpec({
 
     fun newDriver(): GameTestDriver {
         val d = GameTestDriver()
-        d.registerCards(TestCards.all + listOf(captain, legacyCaptain, copyingCaptain, walker, bulwark))
+        d.registerCards(TestCards.all + listOf(captain, legacyCaptain, copyingCaptain, rallyingCathar, walker, bulwark))
         d.initMirrorMatch(deck = Deck.of("Forest" to 40), skipMulligans = true, startingPlayer = 0)
         d.passPriorityUntil(Step.PRECOMBAT_MAIN)
         return d
@@ -256,16 +285,116 @@ class EnteringAttackDefenderChoiceTest : FunSpec({
         d.soldierTokens().map { d.attackedBy(it) } shouldContainExactly listOf(d.player2, d.player2)
     }
 
-    test("CONTROLLER_CHOOSES on a token copy needs attacking and no named defender") {
+    test("CONTROLLER_CHOOSES and a named defender need attacking") {
         shouldThrow<IllegalArgumentException> {
             CreateTokenCopyOfTargetEffect(target = EffectTarget.Self, attackDefender = EnteringAttackDefender.CONTROLLER_CHOOSES)
         }
         shouldThrow<IllegalArgumentException> {
-            CreateTokenCopyOfTargetEffect(
-                target = EffectTarget.Self, attacking = true, attackedPlayer = EffectTarget.Controller,
-                attackDefender = EnteringAttackDefender.CONTROLLER_CHOOSES,
+            CreateTokenEffect(
+                power = 1, toughness = 1, colors = emptySet(), creatureTypes = setOf("Human"),
+                attackedPlayer = EffectTarget.Controller,
             )
         }
+    }
+
+    fun multiplayer(): Pair<GameTestDriver, List<EntityId>> {
+        val d = GameTestDriver()
+        d.registerCards(TestCards.all + listOf(captain, legacyCaptain, copyingCaptain, rallyingCathar, walker, bulwark))
+        val ids = d.initMultiplayer(List(3) { Deck.of("Forest" to 40) })
+        d.passPriorityUntil(Step.PRECOMBAT_MAIN)
+        return d to ids
+    }
+
+    test("for each opponent: one token attacking that opponent, under the source's controller, no question") {
+        val (d, p) = multiplayer()
+        val (p1, p2, p3) = p
+        val cathar = d.putCreatureOnBattlefield(p1, "Test Rallying Cathar").also { d.removeSummoningSickness(it) }
+        d.passPriorityUntil(Step.DECLARE_ATTACKERS)
+        d.declareAttackers(p1, listOf(cathar), p2).error shouldBe null
+        d.resolveUntilDecision()
+
+        d.pendingDecision shouldBe null
+        val tokens = d.getCreatures(p1).filter { d.state.getEntity(it)?.has<TokenComponent>() == true }
+        withClue("both tokens are the attacking player's, not the visited opponents'") { tokens shouldHaveSize 2 }
+        tokens.map { d.attackedBy(it) } shouldContainExactlyInAnyOrder listOf(p2, p3)
+        withClue("an opponent the source didn't attack is attacked too") { d.attackedBy(cathar) shouldBe p2 }
+    }
+
+    test("the choice narrows to that opponent and their planeswalkers — never another's, never a battle") {
+        val (d, p) = multiplayer()
+        val (p1, p2, p3) = p
+        val p2Walker = d.walkerFor(p2)
+        d.walkerFor(p3)
+        d.battleProtectedBy(p3)
+        val cathar = d.putCreatureOnBattlefield(p1, "Test Rallying Cathar").also { d.removeSummoningSickness(it) }
+        d.passPriorityUntil(Step.DECLARE_ATTACKERS)
+        d.declareAttackers(p1, listOf(cathar), p2).error shouldBe null
+        d.resolveUntilDecision()
+
+        val first = d.pendingDecision.shouldBeInstanceOf<ChooseTargetsDecision>()
+        first.playerId shouldBe p1
+        withClue("APNAP visits p2 first: p2 or p2's planeswalker") {
+            first.legalTargets[0]!! shouldContainExactly listOf(p2, p2Walker)
+        }
+        withClue("the prompt doesn't offer battles") { first.prompt.contains("battle") shouldBe false }
+        d.submitTargetSelection(p1, listOf(p2Walker)).error shouldBe null
+
+        val second = d.pendingDecision.shouldBeInstanceOf<ChooseTargetsDecision>()
+        withClue("p3's battle is not 'a planeswalker they control'") {
+            second.legalTargets[0]!!.filter { it == p3 } shouldHaveSize 1
+            second.legalTargets[0]!! shouldHaveSize 2
+        }
+        withClue("another opponent's planeswalker is not a legal answer") {
+            d.submitTargetSelection(p1, listOf(p2Walker)).error shouldNotBe null
+        }
+        d.submitTargetSelection(p1, listOf(p3)).error shouldBe null
+
+        d.pendingDecision shouldBe null
+        val tokens = d.getCreatures(p1).filter { d.state.getEntity(it)?.has<TokenComponent>() == true }
+        tokens.map { d.attackedBy(it) } shouldContainExactlyInAnyOrder listOf(p2Walker, p3)
+    }
+
+    test("each opponent's question starts fresh: answers for one never carry to the next") {
+        val (d, p) = multiplayer()
+        val (p1, p2, p3) = p
+        val p2Walker = d.walkerFor(p2)
+        val p3Walker = d.walkerFor(p3)
+        val cathar = d.putCreatureOnBattlefield(p1, "Test Rallying Cathar").also { d.removeSummoningSickness(it) }
+        d.passPriorityUntil(Step.DECLARE_ATTACKERS)
+        d.declareAttackers(p1, listOf(cathar), p2).error shouldBe null
+        d.resolveUntilDecision()
+
+        d.pendingDecision.shouldBeInstanceOf<ChooseTargetsDecision>().legalTargets[0]!! shouldContainExactly listOf(p2, p2Walker)
+        d.submitTargetSelection(p1, listOf(p2Walker)).error shouldBe null
+        withClue("p3 is asked too, among p3 and p3's planeswalker") {
+            d.pendingDecision.shouldBeInstanceOf<ChooseTargetsDecision>().legalTargets[0]!! shouldContainExactly listOf(p3, p3Walker)
+        }
+        d.submitTargetSelection(p1, listOf(p3)).error shouldBe null
+
+        d.pendingDecision shouldBe null
+        val tokens = d.getCreatures(p1).filter { d.state.getEntity(it)?.has<TokenComponent>() == true }
+        withClue("exactly one token per opponent — none created twice across the pause") {
+            tokens.map { d.attackedBy(it) } shouldContainExactlyInAnyOrder listOf(p2Walker, p3)
+        }
+    }
+
+    test("a named player alone (JOIN_SOURCE) is attacked exactly — no question, never their planeswalker") {
+        val (d, p) = multiplayer()
+        val (p1, _, p3) = p
+        d.walkerFor(p3)
+        d.passPriorityUntil(Step.BEGIN_COMBAT)
+        val result = d.services.effectExecutorRegistry.execute(
+            d.state,
+            Effects.CreateToken(
+                power = 1, toughness = 1, colors = setOf(Color.WHITE), creatureTypes = setOf("Human"),
+                tapped = true, attacking = true, attackedPlayer = EffectTarget.ContextTarget(0),
+            ),
+            EffectContext(sourceId = null, controllerId = p1, targets = listOf(ChosenTarget.Player(p3)))
+        )
+        d.replaceState(result.state)
+        d.pendingDecision shouldBe null
+        d.getCreatures(p1).filter { d.state.getEntity(it)?.has<TokenComponent>() == true }
+            .map { d.attackedBy(it) } shouldContainExactly listOf(p3)
     }
 
     test("the default (JOIN_SOURCE) is unchanged: no question, the tokens join the source's attack") {
@@ -279,7 +408,7 @@ class EnteringAttackDefenderChoiceTest : FunSpec({
 
     test("Two-Headed Giant: the active player's teammate is an attacking player too (CR 805.10a)") {
         val d = GameTestDriver()
-        d.registerCards(TestCards.all + listOf(captain, legacyCaptain, copyingCaptain, walker, bulwark))
+        d.registerCards(TestCards.all + listOf(captain, legacyCaptain, copyingCaptain, rallyingCathar, walker, bulwark))
         val p = d.initMultiplayer(
             List(4) { Deck.of("Forest" to 40) },
             format = com.wingedsheep.sdk.core.Format.TwoHeadedGiant(),

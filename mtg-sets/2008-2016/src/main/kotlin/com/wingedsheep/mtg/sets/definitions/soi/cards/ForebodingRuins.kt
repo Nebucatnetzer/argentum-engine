@@ -8,7 +8,6 @@ import com.wingedsheep.sdk.scripting.AbilityCost
 import com.wingedsheep.sdk.scripting.GameObjectFilter
 import com.wingedsheep.sdk.scripting.OnEnterRun
 import com.wingedsheep.sdk.scripting.TimingRule
-import com.wingedsheep.sdk.scripting.targets.EffectTarget
 
 /**
  * Foreboding Ruins
@@ -31,7 +30,7 @@ val ForebodingRuins = card("Foreboding Ruins") {
         OnEnterRun(
             Effects.MayRevealCardFromHand(
                 filter = GameObjectFilter.Land.withAnySubtype("Swamp", "Mountain"),
-                otherwise = Effects.Tap(EffectTarget.Self),
+                otherwise = Effects.EnterTapped(),
             )
         )
     )
