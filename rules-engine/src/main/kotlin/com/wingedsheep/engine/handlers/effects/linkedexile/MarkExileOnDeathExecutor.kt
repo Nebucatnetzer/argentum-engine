@@ -15,7 +15,9 @@ import kotlin.reflect.KClass
 /**
  * Executor for MarkExileOnDeathEffect.
  * Adds an ExileOnDeath floating effect so that if the target creature would die
- * this turn, it goes to exile instead of the graveyard.
+ * within the effect's duration, it goes to exile instead of the graveyard. A
+ * [Duration.Permanent] mark ends when the creature leaves the battlefield — zone changes
+ * prune floating effects that target the departing object.
  *
  * If the target is a player (not a creature), this effect does nothing.
  */
@@ -39,9 +41,14 @@ class MarkExileOnDeathExecutor : EffectExecutor<MarkExileOnDeathEffect> {
 
         val newState = state.addFloatingEffect(
             layer = Layer.ABILITY,
-            modification = SerializableModification.ExileOnDeath,
+            // "It gains 'If this creature would die, exile it instead'" is an ability the creature
+            // has, which lose-all-abilities effects strip; a "this turn" rider is the spell's own
+            // replacement effect and isn't.
+            modification = SerializableModification.ExileOnDeath(
+                grantedAbility = effect.duration == Duration.Permanent
+            ),
             affectedEntities = setOf(targetId),
-            duration = Duration.EndOfTurn,
+            duration = effect.duration,
             context = context
         )
 

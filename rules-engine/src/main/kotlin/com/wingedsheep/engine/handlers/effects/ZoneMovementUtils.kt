@@ -714,14 +714,28 @@ object ZoneMovementUtils {
     }
 
     /**
+     * Index of a live ExileOnDeath mark on [entityId] ("if it would die, exile it instead"), or -1.
+     * A granted-ability mark (Can't Stay Away) is live only while the creature still has that
+     * ability in layer 6 — a later lose-all-abilities effect strips it; a "this turn" rider always is.
+     */
+    fun exileOnDeathMarkIndex(state: GameState, entityId: EntityId): Int =
+        state.floatingEffects.indexOfFirst { effect ->
+            val mod = effect.effect.modification
+            mod is com.wingedsheep.engine.mechanics.layers.SerializableModification.ExileOnDeath &&
+                entityId in effect.effect.affectedEntities &&
+                (!mod.grantedAbility || state.projectedState.hasExileOnDeathAbility(entityId))
+        }
+
+    /** True when [entityId] carries a live ExileOnDeath mark (see [exileOnDeathMarkIndex]). */
+    fun hasExileOnDeathMark(state: GameState, entityId: EntityId): Boolean =
+        exileOnDeathMarkIndex(state, entityId) != -1
+
+    /**
      * If [entityId] carries an ExileOnDeath mark, returns the state with that mark consumed — the
      * caller then moves the permanent to exile instead of the graveyard. Null when there is no mark.
      */
     fun consumeExileOnDeath(state: GameState, entityId: EntityId): GameState? {
-        val index = state.floatingEffects.indexOfFirst { effect ->
-            effect.effect.modification is com.wingedsheep.engine.mechanics.layers.SerializableModification.ExileOnDeath &&
-                entityId in effect.effect.affectedEntities
-        }
+        val index = exileOnDeathMarkIndex(state, entityId)
         if (index == -1) return null
         return state.copy(floatingEffects = state.floatingEffects.toMutableList().apply { removeAt(index) })
     }
@@ -908,6 +922,13 @@ object ZoneMovementUtils {
         if (fromZone == Zone.BATTLEFIELD && toZone == Zone.GRAVEYARD) {
             val counters = container.get<CountersComponent>()
             if (counters != null && counters.getCount(CounterType.FINALITY) > 0) {
+                return ZoneChangeRedirectResult(Zone.EXILE)
+            }
+            // An ExileOnDeath mark ("if it would die [this turn], exile it instead") covers every
+            // way of dying, sacrifice included — not only the destroy and SBA paths that consume
+            // it up front. Leaving the battlefield prunes the mark along with the object's other
+            // floating effects, so there is nothing to consume here.
+            if (hasExileOnDeathMark(state, entityId)) {
                 return ZoneChangeRedirectResult(Zone.EXILE)
             }
         }
