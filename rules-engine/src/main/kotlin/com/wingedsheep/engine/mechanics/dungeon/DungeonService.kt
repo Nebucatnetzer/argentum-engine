@@ -46,10 +46,16 @@ object DungeonService {
     /** Where [playerId]'s venture marker is, or null if they own no dungeon in the command zone. */
     fun marker(state: GameState, playerId: EntityId): DungeonMarker? = progress(state, playerId)?.current
 
-    /** How many dungeons [playerId] has completed — of [dungeon] only, when it's given. */
-    fun completedCount(state: GameState, playerId: EntityId, dungeon: String? = null): Int {
+    /** How many dungeons [playerId] has completed — of [dungeon] only, when it's given; once per name when [distinctNames]. */
+    fun completedCount(
+        state: GameState,
+        playerId: EntityId,
+        dungeon: String? = null,
+        distinctNames: Boolean = false
+    ): Int {
         val completed = progress(state, playerId)?.completed ?: return 0
-        return if (dungeon == null) completed.size else completed.count { it == dungeon }
+        val matching = if (dungeon == null) completed else completed.filter { it == dungeon }
+        return if (distinctNames) matching.distinct().size else matching.size
     }
 
     /** The outcome of running a venture up to its first choice. */

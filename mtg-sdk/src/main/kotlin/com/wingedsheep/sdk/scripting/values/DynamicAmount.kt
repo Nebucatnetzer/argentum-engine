@@ -729,13 +729,27 @@ sealed interface DynamicAmount : TextReplaceable<DynamicAmount> {
      * Tomb of Annihilation"); `null` counts them all. "You've completed a dungeon" is
      * `Compare(DungeonsCompleted(You), GTE, Fixed(1))`, exposed as
      * [com.wingedsheep.sdk.dsl.Conditions.YouCompletedADungeon].
+     *
+     * [distinctNames] counts each dungeon name once however often it was completed — "for each
+     * differently named dungeon you've completed" (Ellywick Tumblestrum's emblem); the same spelling
+     * as [UnlockedDoors.distinctNames].
      */
     @SerialName("DungeonsCompleted")
     @Serializable
-    data class DungeonsCompleted(val player: Player = Player.You, val dungeon: String? = null) : DynamicAmount {
-        override val description: String =
-            if (dungeon == null) "the number of dungeons ${player.description} ${if (player == Player.You) "have" else "has"} completed"
-            else "the number of times ${player.description} ${if (player == Player.You) "have" else "has"} completed $dungeon"
+    data class DungeonsCompleted(
+        val player: Player = Player.You,
+        val dungeon: String? = null,
+        val distinctNames: Boolean = false
+    ) : DynamicAmount {
+        override val description: String = run {
+            val verb = if (player == Player.You) "have" else "has"
+            when {
+                dungeon != null -> "the number of times ${player.description} $verb completed $dungeon"
+                distinctNames ->
+                    "the number of differently named dungeons ${player.description} $verb completed"
+                else -> "the number of dungeons ${player.description} $verb completed"
+            }
+        }
     }
 
     /**

@@ -73,6 +73,17 @@ class DungeonTest : ScenarioTestBase() {
         }
     }
 
+    /** Gains 1 life for each differently named dungeon you've completed. */
+    private val distinctDelver = card("Test Distinct Delver Reward") {
+        manaCost = "{0}"
+        typeLine = "Sorcery"
+        spell {
+            effect = Effects.GainLife(
+                DynamicAmount.DungeonsCompleted(Player.You, distinctNames = true)
+            )
+        }
+    }
+
     private val ventureWatcher = card("Test Venture Watcher") {
         manaCost = "{1}"
         typeLine = "Creature — Human"
@@ -96,7 +107,7 @@ class DungeonTest : ScenarioTestBase() {
     }
 
     init {
-        listOf(venture, ventureInstant, ventureIntoUndercity, delver, ventureWatcher, bear).forEach { cardRegistry.register(it) }
+        listOf(venture, ventureInstant, ventureIntoUndercity, delver, distinctDelver, ventureWatcher, bear).forEach { cardRegistry.register(it) }
 
         test("venturing with no dungeon offers the three AFR dungeons and enters the chosen one's top room (CR 701.49a)") {
             val game = dungeonGame { withCardInHand(1, "Test Venture") }
@@ -240,6 +251,32 @@ class DungeonTest : ScenarioTestBase() {
             }
             DungeonService.completedCount(game.state, game.player1Id, "Lost Mine of Phandelver") shouldBe 2
             DungeonService.completedCount(game.state, game.player1Id, "Tomb of Annihilation") shouldBe 0
+        }
+
+        test("'differently named dungeons' counts each dungeon name once, however often completed (CR 309.7)") {
+            val game = dungeonGame { withCardsInHand(1, "Test Distinct Delver Reward", 2) }
+            game.setMarker(1, Dungeons.LostMineOfPhandelver, room = 6)
+            game.state = DungeonService.complete(game.state, game.player1Id).first
+            game.setMarker(1, Dungeons.LostMineOfPhandelver, room = 6)
+            game.state = DungeonService.complete(game.state, game.player1Id).first
+
+            game.castSpell(1, "Test Distinct Delver Reward").error shouldBe null
+            game.resolveStack()
+            withClue("Lost Mine twice is one differently named dungeon") {
+                game.getLifeTotal(1) shouldBe 21
+            }
+
+            game.setMarker(1, Dungeons.TombOfAnnihilation, room = 4)
+            game.state = DungeonService.complete(game.state, game.player1Id).first
+            game.castSpell(1, "Test Distinct Delver Reward").error shouldBe null
+            game.resolveStack()
+            withClue("Tomb of Annihilation is a second name: +2 this time") {
+                game.getLifeTotal(1) shouldBe 23
+            }
+            DungeonService.completedCount(game.state, game.player1Id) shouldBe 3
+            DungeonService.completedCount(
+                game.state, game.player1Id, "Lost Mine of Phandelver", distinctNames = true
+            ) shouldBe 1
         }
 
         test("'whenever you venture' and 'whenever you complete a dungeon' trigger") {

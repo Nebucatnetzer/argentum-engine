@@ -1042,9 +1042,14 @@ object DynamicAmounts {
     /**
      * How many dungeons [player] has completed this game (CR 309.7) — of the dungeon named [dungeon]
      * only, when it's given. "If you've completed a dungeon" is `Conditions.YouCompletedADungeon`.
+     * [distinctNames] counts each dungeon name once — "for each differently named dungeon you've
+     * completed".
      */
-    fun dungeonsCompleted(player: Player = Player.You, dungeon: String? = null): DynamicAmount =
-        DynamicAmount.DungeonsCompleted(player, dungeon)
+    fun dungeonsCompleted(
+        player: Player = Player.You,
+        dungeon: String? = null,
+        distinctNames: Boolean = false
+    ): DynamicAmount = DynamicAmount.DungeonsCompleted(player, dungeon, distinctNames)
 
     /**
      * How many counters of [counterType] a player currently has (CR 122.1 — counters placed on a
