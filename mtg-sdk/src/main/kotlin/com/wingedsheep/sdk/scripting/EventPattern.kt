@@ -3375,7 +3375,8 @@ sealed interface EventPattern : TextReplaceable<EventPattern> {
         }
     }
 
-    /** Each individual numerical die roll; scopes on its roller and final result.
+    /** A numerical die roll — each individual die, or (`batch`) each roll instruction for one roller;
+     * scopes on its roller and, per die, its final result.
      * Unlike TrainedEvent (a creature action) and ScriedEvent (a library action), this
      * observes a player's random numerical outcome, with an optional result interval.
      */
@@ -3385,6 +3386,13 @@ sealed interface EventPattern : TextReplaceable<EventPattern> {
         val player: Player = Player.Any,
         val minimumResult: Int? = null,
         val maximumResult: Int? = null,
+        /**
+         * "Whenever you roll one or more dice" (Feywild Trickster, Brazen Dwarf): fire **once per
+         * roll instruction** rather than once per die. The whole instruction's results are bound
+         * to the trigger (`DynamicAmounts.triggerHighestDieResult()` reads "if any of those results
+         * was N or higher" — Farideh, Devil's Chosen). A batch trigger takes no result interval.
+         */
+        val batch: Boolean = false,
     ) : EventPattern {
         init {
             require(player in setOf(Player.You, Player.EachOpponent, Player.Each, Player.Any)) {
@@ -3393,8 +3401,12 @@ sealed interface EventPattern : TextReplaceable<EventPattern> {
             require(minimumResult == null || maximumResult == null || minimumResult <= maximumResult) {
                 "A die-result interval must not be inverted"
             }
+            require(!batch || (minimumResult == null && maximumResult == null)) {
+                "A one-or-more-dice trigger fires on the whole roll, not on a result interval"
+            }
         }
-        override val description: String = "${player.description} rolls a die"
+        override val description: String =
+            if (batch) "${player.description} rolls one or more dice" else "${player.description} rolls a die"
     }
 
     /**
