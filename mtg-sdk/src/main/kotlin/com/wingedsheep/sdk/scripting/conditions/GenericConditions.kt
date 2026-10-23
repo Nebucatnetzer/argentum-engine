@@ -6,6 +6,7 @@ import com.wingedsheep.sdk.scripting.references.Player
 import com.wingedsheep.sdk.scripting.text.TextReplacer
 import com.wingedsheep.sdk.scripting.values.DynamicAmount
 import com.wingedsheep.sdk.scripting.values.EntityNumericProperty
+import com.wingedsheep.sdk.scripting.values.TurnTracker
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 
@@ -187,7 +188,18 @@ data class Compare(
     val right: DynamicAmount
 ) : Condition {
     override val description: String =
-        nthResolutionDescription() ?: "${left.description} is ${operator.phrase} ${right.description}"
+        nthResolutionDescription() ?: lifeGainedDescription() ?: "${left.description} is ${operator.phrase} ${right.description}"
+
+    /** Oracle's own wording for `Conditions.YouGainedLifeThisTurn[AtLeast]` (Infusion). */
+    private fun lifeGainedDescription(): String? {
+        val tracked = left as? DynamicAmount.TurnTracking
+        val n = (right as? DynamicAmount.Fixed)?.amount
+        if (tracked?.tracker != TurnTracker.LIFE_GAINED || operator != ComparisonOperator.GTE || n == null || n < 1) {
+            return null
+        }
+        val who = tracked.player.description
+        return if (n == 1) "$who gained life this turn" else "$who gained $n or more life this turn"
+    }
 
     /** Oracle's own wording for `Conditions.SourceAbilityResolvedNTimes(n)` (Harvestrite Host). */
     private fun nthResolutionDescription(): String? {

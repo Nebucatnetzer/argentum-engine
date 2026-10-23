@@ -180,10 +180,18 @@ export function OrderTriggersUI({ decision }: { decision: OrderTriggersDecision 
                 <div className={styles.body}>
                   <span className={styles.source}>{trigger.sourceName}</span>
                   <span className={styles.text}><AbilityText text={trigger.text} size={14} /></span>
-                  {(triggeredBy || trigger.choosesTargets) && (
+                  {(triggeredBy || trigger.choosesTargets || trigger.checksOnResolution) && (
                     <span className={styles.meta}>
                       {triggeredBy && <span>for {triggeredBy}</span>}
                       {trigger.choosesTargets && <span className={styles.targetsChip}>targets chosen next</span>}
+                      {trigger.checksOnResolution && (
+                        <span
+                          className={styles.checksChip}
+                          title="Its condition is checked as it resolves, not when it triggered — resolve it after the abilities that make it true."
+                        >
+                          checks as it resolves
+                        </span>
+                      )}
                     </span>
                   )}
                 </div>

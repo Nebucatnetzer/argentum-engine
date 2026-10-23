@@ -81,7 +81,7 @@ class TragedyFeasterScenarioTest : ScenarioTestBase() {
                 }
             }
 
-            test("gained life this turn: trigger does not fire, nothing is sacrificed") {
+            test("gained life this turn: the trigger resolves and nothing is sacrificed") {
                 var builder = scenario()
                     .withPlayers("Player", "Opponent")
                     .withCardOnBattlefield(1, "Tragedy Feaster", summoningSickness = false)
@@ -93,8 +93,8 @@ class TragedyFeasterScenarioTest : ScenarioTestBase() {
                 repeat(5) { builder = builder.withCardInLibrary(2, "Mountain") }
                 val game = builder.build()
 
-                // Record that the controller gained life this turn — the intervening-if fails,
-                // so the trigger never goes on the stack.
+                // Record that the controller gained life this turn — the trigger still goes on the
+                // stack, and checks as it resolves.
                 game.state = game.state.updateEntity(game.player1Id) {
                     it.withComponent(LifeGainedAmountThisTurnComponent(2))
                 }

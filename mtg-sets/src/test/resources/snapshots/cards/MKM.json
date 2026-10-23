@@ -4980,7 +4980,7 @@
                         }
                     ]
                 },
-                "descriptionOverride": "To solve — the amount of life your gained this turn is at least 5"
+                "descriptionOverride": "To solve — you gained 5 or more life this turn"
             }
         ],
         "activatedAbilities": [

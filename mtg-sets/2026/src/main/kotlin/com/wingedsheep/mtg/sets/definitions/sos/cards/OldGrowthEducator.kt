@@ -32,8 +32,10 @@ val OldGrowthEducator = card("Old-Growth Educator") {
     keywords(Keyword.VIGILANCE, Keyword.REACH)
     triggeredAbility {
         trigger = Triggers.self.enters()
-        triggerRestriction = Conditions.YouGainedLifeThisTurn
-        effect = Effects.AddCounters(counterType = CounterType.PLUS_ONE_PLUS_ONE, count = 2, target = EffectTarget.Self)
+        effect = Effects.If(
+            Conditions.YouGainedLifeThisTurn,
+            Effects.AddCounters(counterType = CounterType.PLUS_ONE_PLUS_ONE, count = 2, target = EffectTarget.Self)
+        )
     }
     metadata {
         rarity = Rarity.UNCOMMON

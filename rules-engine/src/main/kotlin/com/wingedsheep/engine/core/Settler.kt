@@ -241,7 +241,8 @@ class Settler(
                 if (state.pendingTriggers.isEmpty()) break
             }
 
-            val waiting = if (resuming) state.triggersBeingPlaced else apnapOrder(state, state.pendingTriggers)
+            val waiting = if (resuming) state.triggersBeingPlaced
+                else TriggerOrdering.suggested(apnapOrder(state, state.pendingTriggers))
             if (!resuming) {
                 // A player who orders their own triggers (CR 603.3b) is asked before any of them
                 // chooses targets; the wave waits, in APNAP order, until every answer is in.

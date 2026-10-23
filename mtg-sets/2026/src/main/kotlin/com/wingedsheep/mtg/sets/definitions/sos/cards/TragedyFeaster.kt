@@ -21,9 +21,10 @@ import com.wingedsheep.sdk.core.Step
  * life this turn.
  *
  * Infusion is an ability word (no rules meaning) flavoring an end-step trigger gated on the
- * "you gained life this turn" tracker. Modeled as "sacrifice a permanent UNLESS you gained life"
- * — i.e. the trigger only goes on the stack when you did NOT gain life this turn
- * ([Conditions.Not] of [Conditions.YouGainedLifeThisTurn]), and its effect makes the controller
+ * "you gained life this turn" tracker. It is not an intervening "if": the ability triggers every
+ * end step and checks as it resolves (per the card's ruling), so lifegain that resolves first —
+ * another end-step trigger, or a spell cast in response — still spares you. The effect is
+ * [Effects.If] over [Conditions.Not] of [Conditions.YouGainedLifeThisTurn], making the controller
  * sacrifice a permanent of their choice ([SacrificeEffect] over any permanent — the controller-
  * chooses idiom shared with Accursed Centaur). Ward—Discard a card via [WardCost.Discard].
  */
@@ -43,8 +44,10 @@ val TragedyFeaster = card("Tragedy Feaster") {
 
     triggeredAbility {
         trigger = Triggers.you.beginningOf(Step.END)
-        triggerRestriction = Conditions.Not(Conditions.YouGainedLifeThisTurn)
-        effect = Effects.SacrificeOwn(GameObjectFilter.Permanent)
+        effect = Effects.If(
+            Conditions.Not(Conditions.YouGainedLifeThisTurn),
+            Effects.SacrificeOwn(GameObjectFilter.Permanent)
+        )
         description = "Infusion — At the beginning of your end step, sacrifice a permanent unless " +
             "you gained life this turn."
     }

@@ -179,7 +179,7 @@ export function PreferencesPanel({ compact = false }: { compact?: boolean }) {
         />
         <Toggle
           label="Order my triggers automatically"
-          hint="When several of your abilities trigger at once, they go on the stack in the order they triggered. Off: you choose the order whenever it can matter — scry before you draw, make the token before the counters."
+          hint="When several of your abilities trigger at once, they go on the stack in the order they triggered — except that one checking this turn (“if you gained life this turn”) resolves after the rest. Off: you choose the order whenever it can matter — scry before you draw, make the token before the counters."
           checked={gameplay.autoOrderTriggers}
           onChange={(autoOrderTriggers) => update('gameplay', { autoOrderTriggers })}
         />

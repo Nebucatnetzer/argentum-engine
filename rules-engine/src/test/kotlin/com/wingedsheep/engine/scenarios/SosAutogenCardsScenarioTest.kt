@@ -19,7 +19,7 @@ import io.kotest.matchers.shouldBe
  *  - Glorious Decay: modal instant; the "deals 4 damage to target creature with flying" mode.
  *  - Efflorescence: Infusion instant — two +1/+1 counters, plus a conditional keyword grant.
  *  - Withering Curse: Infusion sorcery — all creatures get -2/-2, OR destroy all instead.
- *  - Poisoner's Apprentice: Infusion ETB — intervening-if -4/-4 on an opponent's creature.
+ *  - Poisoner's Apprentice: Infusion ETB — -4/-4 on an opponent's creature, checked on resolution.
  */
 class SosAutogenCardsScenarioTest : ScenarioTestBase() {
 
@@ -218,7 +218,7 @@ class SosAutogenCardsScenarioTest : ScenarioTestBase() {
 
                 val bears = game.findPermanent("Grizzly Bears")!!
                 game.castSpell(1, "Poisoner's Apprentice").error shouldBe null
-                game.resolveStack() // creature resolves; the ETB intervening-if fires and asks for a target
+                game.resolveStack() // creature resolves; the ETB triggers and asks for a target
                 game.selectTargets(listOf(bears)).error shouldBe null
                 game.resolveStack()
 
@@ -227,7 +227,7 @@ class SosAutogenCardsScenarioTest : ScenarioTestBase() {
                 }
             }
 
-            test("without life gained: the ETB ability does not fire") {
+            test("without life gained: the ETB still triggers and targets, but does nothing") {
                 val game = scenario()
                     .withPlayers("Player1", "Player2")
                     .withCardInHand(1, "Poisoner's Apprentice")
@@ -237,10 +237,14 @@ class SosAutogenCardsScenarioTest : ScenarioTestBase() {
                     .inPhase(Phase.PRECOMBAT_MAIN, Step.PRECOMBAT_MAIN)
                     .build()
 
+                val bears = game.findPermanent("Grizzly Bears")!!
                 game.castSpell(1, "Poisoner's Apprentice").error shouldBe null
                 game.resolveStack()
+                // Per the ruling the ability triggers regardless and a target is chosen.
+                game.selectTargets(listOf(bears)).error shouldBe null
+                game.resolveStack()
 
-                withClue("no life gained → intervening-if false → creature untouched") {
+                withClue("no life gained by resolution → creature untouched") {
                     game.isOnBattlefield("Grizzly Bears") shouldBe true
                     game.hasPendingDecision() shouldBe false
                 }

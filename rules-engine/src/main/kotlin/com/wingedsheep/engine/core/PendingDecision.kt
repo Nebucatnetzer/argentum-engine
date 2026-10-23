@@ -577,7 +577,13 @@ data class TriggerToOrder(
     val triggeringEntityId: EntityId? = null,
     /** True when the ability's targets are chosen as it goes on the stack, after this question. */
     @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
-    val choosesTargets: Boolean = false
+    val choosesTargets: Boolean = false,
+    /**
+     * True when the ability checks this turn's history as it resolves ("if you gained life this
+     * turn"), so resolving it after the others can change what it does.
+     */
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val checksOnResolution: Boolean = false
 )
 
 /**

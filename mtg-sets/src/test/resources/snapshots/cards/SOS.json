@@ -8983,20 +8983,26 @@
                 "id": "Lumaret's Favor:1",
                 "trigger": "CastThisSpellEvent",
                 "effect": {
-                    "type": "CopyTargetSpell",
-                    "target": "TriggeringEntity"
-                },
-                "triggerRestriction": {
-                    "type": "Compare",
-                    "left": {
-                        "type": "TurnTracking",
-                        "player": "You",
-                        "tracker": "LIFE_GAINED"
+                    "type": "Gated",
+                    "gate": {
+                        "type": "Gate.WhenCondition",
+                        "condition": {
+                            "type": "Compare",
+                            "left": {
+                                "type": "TurnTracking",
+                                "player": "You",
+                                "tracker": "LIFE_GAINED"
+                            },
+                            "operator": "GTE",
+                            "right": {
+                                "type": "Fixed",
+                                "amount": 1
+                            }
+                        }
                     },
-                    "operator": "GTE",
-                    "right": {
-                        "type": "Fixed",
-                        "amount": 1
+                    "then": {
+                        "type": "CopyTargetSpell",
+                        "target": "TriggeringEntity"
                     }
                 },
                 "descriptionOverride": "Infusion — When you cast this spell, copy it if you gained life this turn. You may choose new targets for the copy."
@@ -10476,22 +10482,28 @@
                     "to": "Battlefield"
                 },
                 "effect": {
-                    "type": "AddCounters",
-                    "counterType": "PLUS_ONE_PLUS_ONE",
-                    "count": 2,
-                    "target": "Self"
-                },
-                "triggerRestriction": {
-                    "type": "Compare",
-                    "left": {
-                        "type": "TurnTracking",
-                        "player": "You",
-                        "tracker": "LIFE_GAINED"
+                    "type": "Gated",
+                    "gate": {
+                        "type": "Gate.WhenCondition",
+                        "condition": {
+                            "type": "Compare",
+                            "left": {
+                                "type": "TurnTracking",
+                                "player": "You",
+                                "tracker": "LIFE_GAINED"
+                            },
+                            "operator": "GTE",
+                            "right": {
+                                "type": "Fixed",
+                                "amount": 1
+                            }
+                        }
                     },
-                    "operator": "GTE",
-                    "right": {
-                        "type": "Fixed",
-                        "amount": 1
+                    "then": {
+                        "type": "AddCounters",
+                        "counterType": "PLUS_ONE_PLUS_ONE",
+                        "count": 2,
+                        "target": "Self"
                     }
                 }
             }
@@ -11355,18 +11367,37 @@
                     "to": "Battlefield"
                 },
                 "effect": {
-                    "type": "ModifyStats",
-                    "powerModifier": {
-                        "type": "Fixed",
-                        "amount": -4
+                    "type": "Gated",
+                    "gate": {
+                        "type": "Gate.WhenCondition",
+                        "condition": {
+                            "type": "Compare",
+                            "left": {
+                                "type": "TurnTracking",
+                                "player": "You",
+                                "tracker": "LIFE_GAINED"
+                            },
+                            "operator": "GTE",
+                            "right": {
+                                "type": "Fixed",
+                                "amount": 1
+                            }
+                        }
                     },
-                    "toughnessModifier": {
-                        "type": "Fixed",
-                        "amount": -4
-                    },
-                    "target": {
-                        "type": "BoundVariable",
-                        "name": "t0"
+                    "then": {
+                        "type": "ModifyStats",
+                        "powerModifier": {
+                            "type": "Fixed",
+                            "amount": -4
+                        },
+                        "toughnessModifier": {
+                            "type": "Fixed",
+                            "amount": -4
+                        },
+                        "target": {
+                            "type": "BoundVariable",
+                            "name": "t0"
+                        }
                     }
                 },
                 "targetRequirement": {
@@ -11375,19 +11406,6 @@
                         "baseFilter": "creature ctrl:opponent"
                     },
                     "id": "t0"
-                },
-                "triggerRestriction": {
-                    "type": "Compare",
-                    "left": {
-                        "type": "TurnTracking",
-                        "player": "You",
-                        "tracker": "LIFE_GAINED"
-                    },
-                    "operator": "GTE",
-                    "right": {
-                        "type": "Fixed",
-                        "amount": 1
-                    }
                 }
             }
         ]
@@ -17496,23 +17514,29 @@
                 },
                 "binding": "ANY",
                 "effect": {
-                    "type": "Sacrifice",
-                    "filter": "permanent"
-                },
-                "triggerRestriction": {
-                    "type": "Not",
-                    "condition": {
-                        "type": "Compare",
-                        "left": {
-                            "type": "TurnTracking",
-                            "player": "You",
-                            "tracker": "LIFE_GAINED"
-                        },
-                        "operator": "GTE",
-                        "right": {
-                            "type": "Fixed",
-                            "amount": 1
+                    "type": "Gated",
+                    "gate": {
+                        "type": "Gate.WhenCondition",
+                        "condition": {
+                            "type": "Not",
+                            "condition": {
+                                "type": "Compare",
+                                "left": {
+                                    "type": "TurnTracking",
+                                    "player": "You",
+                                    "tracker": "LIFE_GAINED"
+                                },
+                                "operator": "GTE",
+                                "right": {
+                                    "type": "Fixed",
+                                    "amount": 1
+                                }
+                            }
                         }
+                    },
+                    "then": {
+                        "type": "Sacrifice",
+                        "filter": "permanent"
                     }
                 },
                 "descriptionOverride": "Infusion — At the beginning of your end step, sacrifice a permanent unless you gained life this turn."

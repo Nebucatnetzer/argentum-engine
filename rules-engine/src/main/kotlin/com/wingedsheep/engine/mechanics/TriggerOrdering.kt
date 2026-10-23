@@ -15,13 +15,24 @@ import com.wingedsheep.engine.state.components.stack.triggerIdentityFromCurrentC
 import com.wingedsheep.engine.state.faceDownDisplayName
 import com.wingedsheep.engine.view.projection.StackTextRenderer
 import com.wingedsheep.sdk.model.EntityId
+import com.wingedsheep.sdk.scripting.conditions.AllConditions
+import com.wingedsheep.sdk.scripting.conditions.AnyCondition
+import com.wingedsheep.sdk.scripting.conditions.Compare
+import com.wingedsheep.sdk.scripting.conditions.Condition
+import com.wingedsheep.sdk.scripting.conditions.NotCondition
+import com.wingedsheep.sdk.scripting.effects.CompositeEffect
+import com.wingedsheep.sdk.scripting.effects.Effect
+import com.wingedsheep.sdk.scripting.effects.Gate
+import com.wingedsheep.sdk.scripting.effects.GatedEffect
 import com.wingedsheep.sdk.scripting.effects.ModalEffect
+import com.wingedsheep.sdk.scripting.values.DynamicAmount
 
 /**
  * CR 603.3b: each player, in APNAP order, puts the triggered abilities they control on the stack
  * in any order they choose. A player who turned automatic ordering off
  * ([GameState.manualTriggerOrdering]) is asked for that order, before any of the abilities chooses
- * targets (CR 603.3d); everyone else's abilities keep the order they triggered in.
+ * targets (CR 603.3d); everyone else's abilities go on in the [suggested] order — the order they
+ * triggered in, except that an ability checking this turn's history as it resolves goes last.
  *
  * The [com.wingedsheep.engine.core.Settler] asks once per wave, so each of 603.3b's two parts (the
  * abilities that trigger on an attack-caused ability triggering come second) gets its own question.
@@ -75,6 +86,40 @@ object TriggerOrdering {
     }
 
     /**
+     * The order automatic ordering uses, and the one a player who orders their own triggers is
+     * offered first: the wave as it triggered, except that each player's abilities which check this
+     * turn's history as they resolve ("put two +1/+1 counters on it if you gained life this turn")
+     * are placed first, so they resolve after that player's other abilities and see what those did.
+     * Any order is legal (CR 603.3b); this is just the one a player almost always wants. The sort
+     * is stable, so the wave keeps its APNAP grouping and identical abilities stay together.
+     */
+    fun suggested(wave: List<PendingTrigger>): List<PendingTrigger> {
+        val players = wave.map { it.controllerId }.distinct()
+        return wave.sortedWith(
+            compareBy({ players.indexOf(it.controllerId) }, { if (checksTurnHistory(it.ability.effect)) 0 else 1 })
+        )
+    }
+
+    /**
+     * Whether [effect] is gated, as it resolves, on a count of what happened this turn — a
+     * [DynamicAmount.TurnTracking] tally (life gained, creatures died, spells cast). Those tallies
+     * only grow during a turn, so resolving later can only let the ability see more.
+     */
+    internal fun checksTurnHistory(effect: Effect): Boolean = when (effect) {
+        is GatedEffect -> (effect.gate as? Gate.WhenCondition)?.condition?.let(::readsTurnTracking) == true
+        is CompositeEffect -> effect.effects.any(::checksTurnHistory)
+        else -> false
+    }
+
+    private fun readsTurnTracking(condition: Condition): Boolean = when (condition) {
+        is Compare -> condition.left is DynamicAmount.TurnTracking || condition.right is DynamicAmount.TurnTracking
+        is NotCondition -> readsTurnTracking(condition.condition)
+        is AllConditions -> condition.conditions.any(::readsTurnTracking)
+        is AnyCondition -> condition.conditions.any(::readsTurnTracking)
+        else -> false
+    }
+
+    /**
      * Whether ordering [triggers] can change anything. Copies of one card's ability that choose no
      * targets or modes are interchangeable, so every order of them is the same stack — the guard
      * Magic Online uses to stack identical triggers without asking. It also keeps identical
@@ -100,7 +145,8 @@ object TriggerOrdering {
             ),
             imageUri = if (faceDown) null else state.getEntity(trigger.sourceId)?.get<CardComponent>()?.imageUri,
             triggeringEntityId = trigger.triggerContext.triggeringEntityId?.takeIf { it != trigger.sourceId },
-            choosesTargets = ability.allTargetRequirements.isNotEmpty()
+            choosesTargets = ability.allTargetRequirements.isNotEmpty(),
+            checksOnResolution = checksTurnHistory(ability.effect)
         )
     }
 }

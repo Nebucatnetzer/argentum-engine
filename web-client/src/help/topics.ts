@@ -1243,7 +1243,8 @@ export const HELP_TOPICS: readonly HelpTopic[] = [
     summary:
       'When several of your abilities trigger at once, they go on the stack in the order they triggered. Turn off Order my triggers automatically (Preferences → Gameplay) to choose the order yourself — scry before you draw, make the token before the counters go out.',
     body: [
-      { kind: 'p', text: 'With it off, the game stops before your triggers go on the stack and lists them top to bottom in the order they will resolve: the top one resolves first. Drag a row, use its arrows, or press Alt+↑/↓ on it, then Put on the stack. Reset order puts them back the way they triggered.' },
+      { kind: 'p', text: 'With it off, the game stops before your triggers go on the stack and lists them top to bottom in the order they will resolve: the top one resolves first. Drag a row, use its arrows, or press Alt+↑/↓ on it, then Put on the stack. Reset order puts them back in the suggested order.' },
+      { kind: 'p', text: 'An ability that checks this turn as it resolves — Infusion’s “if you gained life this turn” — is marked checks as it resolves and starts at the bottom, so it sees the life your other triggers gain first. Automatic ordering does the same.' },
       { kind: 'p', text: 'You are only asked when the order can matter. A single trigger, or several copies of the same ability that choose no targets (two Soul Wardens seeing one creature enter), goes straight on the stack. Abilities that need targets pick them after you set the order, one by one.' },
       { kind: 'p', text: 'If your opponent’s abilities triggered at the same moment, the player whose turn it is orders theirs first, so the other player’s end up on top and resolve first.' },
       { kind: 'tip', text: 'Tick Don’t ask again in the prompt to go back to automatic ordering; it takes effect straight away.' },

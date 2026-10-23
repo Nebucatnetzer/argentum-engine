@@ -20,7 +20,7 @@ import kotlinx.serialization.json.Json
  * CR 603.3b: each player, in APNAP order, puts their own simultaneous triggered abilities on the
  * stack in any order they choose. A player who turned automatic ordering off is asked for that
  * order, before any of the abilities chooses targets (CR 603.3d); everyone else keeps the order the
- * abilities triggered in.
+ * abilities triggered in, except that one checking this turn's history as it resolves goes last.
  */
 class TriggerOrderingTest : FunSpec({
     // Rumor Gatherer's and Elvish Visionary's shapes: a scry that wants to resolve before the draw.
@@ -60,13 +60,28 @@ class TriggerOrderingTest : FunSpec({
             effect = Effects.DealDamage(1, t)
         }
     }
+    // Old-Growth Educator's shape: an Infusion check made as the ability resolves.
+    val educator = card("Order Educator") {
+        manaCost = "{1}"; typeLine = "Creature — Test"; power = 4; toughness = 4
+        triggeredAbility {
+            trigger = Triggers.self.enters()
+            effect = Effects.If(Conditions.YouGainedLifeThisTurn, Effects.DrawCards(1))
+        }
+    }
+    val lumaret = card("Order Lumaret") {
+        manaCost = "{1}"; typeLine = "Creature — Test"; power = 2; toughness = 2
+        triggeredAbility {
+            trigger = Triggers.a(GameObjectFilter.Creature.youControl()).enters()
+            effect = Effects.GainLife(1)
+        }
+    }
     val bear = card("Order Bear") {
         manaCost = "{1}"; typeLine = "Creature — Test"; power = 2; toughness = 2
     }
 
     fun driver(): GameTestDriver {
         val d = GameTestDriver()
-        d.registerCards(TestCards.all + listOf(gatherer, visionary, warden, sentinel, pinger, bear))
+        d.registerCards(TestCards.all + listOf(gatherer, visionary, warden, sentinel, pinger, educator, lumaret, bear))
         d.initMirrorMatch(Deck.of("Plains" to 40), skipMulligans = true, startingPlayer = 0)
         d.passPriorityUntil(Step.PRECOMBAT_MAIN)
         return d
@@ -99,6 +114,26 @@ class TriggerOrderingTest : FunSpec({
         d.pendingDecision shouldBe null
         // Visionary's own trigger was detected first, so its draw resolves before the scry.
         d.stackTopFirst() shouldContainExactly listOf(visionary.name, gatherer.name)
+    }
+
+    test("with automatic ordering, an ability checking this turn's history resolves after the others") {
+        val d = driver()
+        d.putCreatureOnBattlefield(d.player1, lumaret.name)
+        d.cast(educator.name)
+        d.pendingDecision shouldBe null
+        // Whatever order detection found them in, the check waits for the lifegain.
+        d.stackTopFirst() shouldContainExactly listOf(lumaret.name, educator.name)
+    }
+
+    test("asked for the order, the history check is offered last and marked") {
+        val d = driver()
+        d.putCreatureOnBattlefield(d.player1, lumaret.name)
+        d.manual(listOf(d.player1))
+        d.cast(educator.name)
+
+        val decision = d.pendingDecision.shouldBeInstanceOf<OrderTriggersDecision>()
+        decision.triggers.map { it.sourceName } shouldContainExactly listOf(lumaret.name, educator.name)
+        decision.triggers.map { it.checksOnResolution } shouldContainExactly listOf(false, true)
     }
 
     test("with automatic ordering off, the controller is asked and the default order is offered first") {

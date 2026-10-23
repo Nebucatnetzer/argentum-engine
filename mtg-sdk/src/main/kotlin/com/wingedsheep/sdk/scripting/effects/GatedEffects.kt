@@ -147,7 +147,13 @@ data class GatedEffect(
                 }
             }
             is Gate.WhenCondition -> buildString {
-                append(g.condition.description.replaceFirstChar { it.uppercase() })
+                // Most conditions read "if …"; a bare comparison ("you gained life this turn")
+                // needs the "If" supplied.
+                val condition = g.condition.description
+                val clause = if (condition.startsWith("if ", ignoreCase = true) ||
+                    condition.startsWith("unless ", ignoreCase = true)
+                ) condition else "if $condition"
+                append(clause.replaceFirstChar { it.uppercase() })
                 append(", ")
                 append(pronounForTestedTarget(g.condition, thenText).lowercaseFirst())
                 if (otherwiseText != null) append(". Otherwise, ${otherwiseText.lowercaseFirst()}")

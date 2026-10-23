@@ -585,6 +585,8 @@ export interface TriggerToOrder {
   readonly triggeringEntityId?: EntityId
   /** Its targets are chosen as it goes on the stack, right after this question. */
   readonly choosesTargets?: boolean
+  /** It checks this turn's history as it resolves ("if you gained life this turn"). */
+  readonly checksOnResolution?: boolean
 }
 
 /**

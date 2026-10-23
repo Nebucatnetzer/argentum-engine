@@ -203,6 +203,14 @@
   color: #f5b25a;
 }
 
+.checksChip {
+  padding: 1px 7px;
+  border-radius: 999px;
+  border: 1px solid rgba(56, 189, 248, 0.5);
+  color: #7dd3fc;
+  cursor: help;
+}
+
 .arrows {
   display: flex;
   flex-direction: column;

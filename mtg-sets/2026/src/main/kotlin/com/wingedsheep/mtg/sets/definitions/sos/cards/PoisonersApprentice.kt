@@ -28,9 +28,8 @@ val PoisonersApprentice = card("Poisoner's Apprentice") {
     toughness = 2
     triggeredAbility {
         trigger = Triggers.self.enters()
-        triggerRestriction = Conditions.YouGainedLifeThisTurn
         val t = target(TargetFilter.Creature.opponentControls())
-        effect = Effects.ModifyStats(-4, -4, t)
+        effect = Effects.If(Conditions.YouGainedLifeThisTurn, Effects.ModifyStats(-4, -4, t))
     }
     metadata {
         rarity = Rarity.UNCOMMON
