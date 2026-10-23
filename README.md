@@ -62,6 +62,29 @@ just client
 
 The client runs at `http://localhost:5173` and connects to the server at `http://localhost:8080`.
 
+### Run with Nix
+
+```bash
+nix run .
+```
+
+Nix builds the game server and the web client, then starts both under
+[process-compose](https://github.com/F1bonacc1/process-compose). When both are ready, it opens
+`http://localhost:5173` with `explorer.exe` on WSL, or with `$DEFAULT_BROWSER` elsewhere.
+Set `ARGENTUM_PORT` or `ARGENTUM_SERVER_PORT` to use other ports, and pass Spring settings as
+environment variables, e.g. `SPRING_PROFILES_ACTIVE=local nix run .`. Runtime files and logs go to
+`.devenv/state/<service>/` in the project root.
+
+`nix develop` opens a shell with JDK 21, Node.js 22 and `just`.
+
+After changing Gradle dependencies, regenerate the dependency lock:
+
+```bash
+nix build .#game-server.mitmCache.updateScript && ./result
+```
+
+After changing `web-client/package-lock.json`, update `npmDepsHash` in `nix/web-client.nix`.
+
 ### Available Commands
 
 **Build & Test**

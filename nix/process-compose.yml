@@ -1,0 +1,43 @@
+version: "0.5"
+
+processes:
+  game-server:
+    command: argentum-game-server --server.port=$ARGENTUM_SERVER_PORT
+    working_dir: ${ARGENTUM_STATE_DIR}/game-server
+    environment:
+      # Spring's embedded Tomcat writes its work files to the Java temp directory.
+      - "JDK_JAVA_OPTIONS=-Djava.io.tmpdir=${ARGENTUM_STATE_DIR}/game-server"
+    # /api/sets returns the static set catalog, so it answers as soon as Spring serves requests.
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: ${ARGENTUM_SERVER_PORT}
+        path: /api/sets
+      period_seconds: 2
+      failure_threshold: 90
+    availability:
+      exit_on_end: true
+
+  web:
+    command: caddy run --adapter caddyfile --config $ARGENTUM_CADDYFILE
+    working_dir: ${ARGENTUM_STATE_DIR}/caddy
+    environment:
+      - "XDG_DATA_HOME=${ARGENTUM_STATE_DIR}/caddy/data"
+      - "XDG_CONFIG_HOME=${ARGENTUM_STATE_DIR}/caddy/config"
+    readiness_probe:
+      http_get:
+        host: 127.0.0.1
+        port: ${ARGENTUM_PORT}
+        path: /
+      period_seconds: 1
+      failure_threshold: 30
+    availability:
+      exit_on_end: true
+
+  open-browser:
+    command: argentum-open-browser "http://localhost:$ARGENTUM_PORT"
+    depends_on:
+      game-server:
+        condition: process_healthy
+      web:
+        condition: process_healthy

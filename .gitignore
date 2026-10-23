@@ -217,3 +217,9 @@ scripts/__pycache__/
 __pycache__/
 *.py[cod]
 e2e-scenarios/.ui-check/
+
+# nix build output
+/result*
+
+# Runtime state of `nix run` (devenv layout)
+/.devenv/
