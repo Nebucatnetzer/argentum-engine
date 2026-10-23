@@ -4,22 +4,22 @@ import com.wingedsheep.sdk.model.CardDefinition
 import kotlin.random.Random
 
 /**
- * Reserves named nonbasic lands for one dedicated slot, then delegates the other slots to [base].
- * [basicLands] supplies the basic-land arts that the generator removes from its ordinary pool.
- * Each supplied basic printing has weight [basicWeight]; each available nonbasic name has weight
- * [nonbasicWeight]. Host-banned nonbasics are absent from [pool] and cannot enter the land slot.
- * Basic lands remain available independently of the host ban list, as in limited deck building.
+ * Reserves named nonbasic lands for one dedicated land slot, then delegates the other slots to [base].
+ * The land slot opens one of the available nonbasics with [nonbasicChance] — the set's published
+ * odds, e.g. "a common dual land (50%) or a basic land (50%)" — and otherwise one of the
+ * [basicLands] arts, which the generator removes from its ordinary pool. Either group falls back to
+ * the other when it is empty. Host-banned nonbasics are absent from [pool] and cannot enter the land
+ * slot; basic lands remain available independently of the host ban list, as in limited deck building.
  */
 data class LandSlotBooster(
     val base: BoosterStrategy,
     val nonbasicLandNames: Set<String>,
     val basicLands: List<CardDefinition>,
-    val basicWeight: Int = 1,
-    val nonbasicWeight: Int = 1,
+    val nonbasicChance: Double,
 ) : BoosterStrategy {
     init {
         require(basicLands.all { it.typeLine.isBasicLand }) { "Land-slot basics must be basic lands" }
-        require(basicWeight > 0 && nonbasicWeight > 0) { "Land-slot weights must be positive" }
+        require(nonbasicChance in 0.0..1.0) { "nonbasicChance must be a probability" }
     }
 
     override fun generate(pool: List<CardDefinition>, random: Random): List<CardDefinition> {
@@ -27,9 +27,14 @@ data class LandSlotBooster(
         val regular = pool.filter { it.name !in nonbasicLandNames && !it.typeLine.isBasicLand }
         val booster = base.generate(regular, random)
         val used = booster.mapTo(hashSetOf()) { it.name }
-        val land = weightedPick((nonbasics + basicLands).filter { it.name !in used }, random) {
-            if (it.typeLine.isBasicLand) basicWeight else nonbasicWeight
+        val availableNonbasics = nonbasics.filter { it.name !in used }
+        val availableBasics = basicLands.filter { it.name !in used }
+        val (first, second) = if (random.nextDouble() < nonbasicChance) {
+            availableNonbasics to availableBasics
+        } else {
+            availableBasics to availableNonbasics
         }
+        val land = (first.ifEmpty { second }).randomOrNull(random)
         return if (land == null) booster else booster + land
     }
 }

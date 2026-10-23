@@ -1,13 +1,12 @@
 package com.wingedsheep.gameserver.config
 
 import com.wingedsheep.gameserver.coverage.SetCoverageService
-import com.wingedsheep.sdk.limited.DoubleFacedSlotBooster
+import com.wingedsheep.sdk.limited.DedicatedSlotBooster
 import com.wingedsheep.sdk.limited.EchoedPairsPlayBooster
 import com.wingedsheep.sdk.limited.LandSlotBooster
-import com.wingedsheep.sdk.limited.LegendarySlotBooster
 import com.wingedsheep.sdk.limited.PlayBooster
+import com.wingedsheep.sdk.limited.PrintSheetBooster
 import com.wingedsheep.sdk.limited.StandardBooster
-import com.wingedsheep.sdk.limited.TwoDoubleFacedSlotBooster
 import com.wingedsheep.sdk.model.Rarity
 import io.kotest.assertions.withClue
 import io.kotest.core.spec.style.FunSpec
@@ -93,7 +92,7 @@ class GameBeansConfigBoosterPoolTest : FunSpec({
         // deck building) and a foil replacing a common in a third of packs (cosmetic, not modelled).
         val neo = boosterGenerator.availableSets["NEO"].shouldNotBeNull()
         neo.fullyImplemented shouldBe true
-        neo.boosterStrategy shouldBe DoubleFacedSlotBooster(commons = 9, uncommons = 3)
+        neo.boosterStrategy.shouldBeInstanceOf<DedicatedSlotBooster>()
         val eligible = neo.cards.filter { it.metadata.inBooster && !it.typeLine.isBasicLand }
         // Scryfall `set:neo is:booster -t:basic`.
         eligible.groupingBy { it.metadata.rarity }.eachCount() shouldBe mapOf(
@@ -130,7 +129,7 @@ class GameBeansConfigBoosterPoolTest : FunSpec({
         // deck building). The foil replacing a common in a third of packs is cosmetic and not modelled.
         val mid = boosterGenerator.availableSets["MID"].shouldNotBeNull()
         mid.fullyImplemented shouldBe true
-        mid.boosterStrategy shouldBe TwoDoubleFacedSlotBooster(commons = 9, uncommons = 3)
+        mid.boosterStrategy.shouldBeInstanceOf<DedicatedSlotBooster>()
         val eligible = mid.cards.filter { it.metadata.inBooster && !it.typeLine.isBasicLand }
         // Scryfall `set:mid is:booster -t:basic`.
         eligible.groupingBy { it.metadata.rarity }.eachCount() shouldBe mapOf(
@@ -197,12 +196,11 @@ class GameBeansConfigBoosterPoolTest : FunSpec({
     }
 
     test("Legends draft pack is the classic 11 commons, 3 uncommons and a rare from its full pool") {
-        // 15-card booster, 11C / 3U / 1R; the set is 75 commons, 114 uncommons and 121 rares. The
-        // C2/U2 print-sheet doubling (46 commons, 7 uncommons) is not modelled: every card of a
-        // rarity is equally likely.
+        // 15-card booster, 11C / 3U / 1R from the three print sheets; the set is 75 commons, 114
+        // uncommons and 121 rares, with the C2/U2 doubling (46 commons, 9 uncommons) as print-run weights.
         val leg = boosterGenerator.availableSets["LEG"].shouldNotBeNull()
         leg.fullyImplemented shouldBe true
-        leg.boosterStrategy shouldBe StandardBooster()
+        leg.boosterStrategy.shouldBeInstanceOf<PrintSheetBooster>()
         val eligible = leg.cards.filter { it.metadata.inBooster && !it.typeLine.isBasicLand }
         eligible.groupingBy { it.metadata.rarity }.eachCount() shouldBe mapOf(
             Rarity.COMMON to 75, Rarity.UNCOMMON to 114, Rarity.RARE to 121,
@@ -226,7 +224,7 @@ class GameBeansConfigBoosterPoolTest : FunSpec({
     test("every Dominaria United draft pack opens exactly one legendary creature from its booster pool") {
         val dmu = boosterGenerator.availableSets["DMU"].shouldNotBeNull()
         dmu.fullyImplemented shouldBe true
-        dmu.boosterStrategy.shouldBeInstanceOf<LegendarySlotBooster>()
+        dmu.boosterStrategy.shouldBeInstanceOf<DedicatedSlotBooster>()
         val eligibleNames = dmu.cards
             .filter { it.metadata.inBooster && !it.typeLine.isBasicLand }
             .mapTo(hashSetOf()) { it.name }
@@ -368,6 +366,83 @@ class GameBeansConfigBoosterPoolTest : FunSpec({
                 .toList()
 
             missing shouldBe emptyList<String>()
+        }
+    }
+
+    test("complete sets open their paper pack size, never repeating a name") {
+        // Paper pack minus what the engine doesn't model (basic-land slots outside a land-slot set,
+        // foil/List/Special Guest/bonus-sheet cards).
+        val expected = mapOf(
+            "ARN" to 8, "ATQ" to 8, "DRK" to 8, "FEM" to 8, "LEG" to 15, "PTK" to 8,
+            "POR" to 13, "P02" to 13, "S99" to 13, "VOW" to 14, "LCI" to 15, "MOM" to 14,
+            "MKM" to 13, "OTJ" to 13, "MH3" to 13, "BLB" to 13, "DSK" to 14, "FDN" to 14, "INR" to 13,
+            "DFT" to 14, "TDM" to 14, "FIN" to 14, "EOE" to 13, "SPM" to 14, "TLA" to 14, "ECL" to 13,
+            "TMT" to 14, "SOS" to 13, "MSH" to 14, "HOB" to 14,
+        )
+        for ((code, size) in expected) {
+            boosterGenerator.availableSets[code].shouldNotBeNull().fullyImplemented shouldBe true
+            repeat(100) {
+                val pack = boosterGenerator.generateBooster(code)
+                withClue("$code pack ${pack.map { it.name }}") {
+                    pack.size shouldBe size
+                    pack.map { it.name }.toSet().size shouldBe size
+                }
+            }
+        }
+    }
+
+    test("land-slot sets open their common nonbasic lands only in the land slot") {
+        for ((code, setConfig) in boosterGenerator.availableSets) {
+            val strategy = setConfig.boosterStrategy as? LandSlotBooster ?: continue
+            val poolNames = setConfig.cards.mapTo(hashSetOf()) { it.name }
+            withClue("$code land-slot names missing from its pool") {
+                strategy.nonbasicLandNames.filterNot { it in poolNames } shouldBe emptyList<String>()
+            }
+            repeat(100) {
+                val pack = boosterGenerator.generateBooster(code)
+                withClue("$code pack ${pack.map { it.name }}") {
+                    pack.dropLast(1).none { it.name in strategy.nonbasicLandNames || it.typeLine.isBasicLand } shouldBe true
+                    val land = pack.last()
+                    (land.typeLine.isBasicLand || land.name in strategy.nonbasicLandNames) shouldBe true
+                }
+            }
+        }
+    }
+
+    test("Arabian Nights opens 8-card packs from its print sheets") {
+        val arn = boosterGenerator.availableSets["ARN"].shouldNotBeNull()
+        val sheets = arn.boosterStrategy.shouldBeInstanceOf<PrintSheetBooster>().sheets
+        sheets.map { it.slots } shouldBe listOf(6, 2)
+        // Every booster-eligible card sits on a sheet, so none is unreachable.
+        val sheetNames = sheets.flatMap { it.cardCounts.keys }.toSet()
+        arn.cards.filter { it.metadata.inBooster && !it.typeLine.isBasicLand }
+            .map { it.name }.filterNot { it in sheetNames } shouldBe emptyList<String>()
+        repeat(200) {
+            val pack = boosterGenerator.generateBooster("ARN")
+            pack.take(6).all { it.metadata.rarity == Rarity.COMMON } shouldBe true
+            pack.drop(6).none { it.metadata.rarity == Rarity.COMMON } shouldBe true
+        }
+    }
+
+    test("March of the Machine opens one battle and one transforming double-faced card per pack") {
+        repeat(300) {
+            val pack = boosterGenerator.generateBooster("MOM")
+            withClue("pack ${pack.map { it.name }}") {
+                pack.count { it.typeLine.isBattle } shouldBe 1
+                pack.count { it.isDoubleFaced && !it.typeLine.isBattle } shouldBe 1
+                pack.count { it.metadata.rarity == Rarity.RARE || it.metadata.rarity == Rarity.MYTHIC } shouldBe 1
+            }
+        }
+    }
+
+    test("Crimson Vow opens a double-faced common and a double-faced uncommon-or-rare per pack") {
+        repeat(300) {
+            val pack = boosterGenerator.generateBooster("VOW")
+            withClue("pack ${pack.map { it.name }}") {
+                pack.count { it.isDoubleFaced } shouldBe 2
+                pack.count { it.isDoubleFaced && it.metadata.rarity == Rarity.COMMON } shouldBe 1
+                pack.count { it.metadata.rarity == Rarity.RARE || it.metadata.rarity == Rarity.MYTHIC } shouldBe 1
+            }
         }
     }
 })

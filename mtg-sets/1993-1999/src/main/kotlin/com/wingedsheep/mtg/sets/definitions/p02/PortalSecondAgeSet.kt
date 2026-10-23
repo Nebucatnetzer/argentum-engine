@@ -1,6 +1,8 @@
 package com.wingedsheep.mtg.sets.definitions.p02
 
 import com.wingedsheep.mtg.sets.discovery.CardDiscovery
+import com.wingedsheep.sdk.limited.BoosterStrategy
+import com.wingedsheep.sdk.limited.StandardBooster
 import com.wingedsheep.sdk.model.CardDefinition
 import com.wingedsheep.sdk.model.MtgSet
 import com.wingedsheep.sdk.model.Printing
@@ -32,6 +34,11 @@ object PortalSecondAgeSet : MtgSet {
     override val printings: List<Printing> by lazy {
         CardDiscovery.findPrintingsIn(CARDS_PACKAGE)
     }
+
+    /**
+     * Boosters held 15 cards: 2 basic lands (supplied at deck building), 9 commons, 3 uncommons and a rare.
+     */
+    override val boosterStrategy: BoosterStrategy = StandardBooster(commons = 9)
 
     private const val CARDS_PACKAGE = "com.wingedsheep.mtg.sets.definitions.p02.cards"
 }

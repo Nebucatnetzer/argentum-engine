@@ -2,6 +2,8 @@ package com.wingedsheep.mtg.sets.definitions.ecl
 
 import com.wingedsheep.mtg.sets.definitions.ecl.cards.LorwynEclipsedVariantPrintings
 import com.wingedsheep.mtg.sets.discovery.CardDiscovery
+import com.wingedsheep.sdk.limited.BoosterStrategy
+import com.wingedsheep.sdk.limited.PlayBooster
 import com.wingedsheep.sdk.model.CardDefinition
 import com.wingedsheep.sdk.model.MtgSet
 import com.wingedsheep.sdk.model.Printing
@@ -42,6 +44,18 @@ object LorwynEclipsedSet : MtgSet {
     override val printings: List<Printing> by lazy {
         CardDiscovery.findPrintingsIn(CARDS_PACKAGE) + LorwynEclipsedVariantPrintings
     }
+
+    /**
+     * Play Booster: the non-foil wildcard is 18% C / 58% U / 19% R / 2% M and the traditional-foil wildcard 60.4% C /
+     * 29.8% U / 7.6% R-M. The land slot is basics only. Figures from WotC's "Collecting Lorwyn Eclipsed" article, as
+     * kept in taw/magic-search-engine `data/boosters`.
+     */
+    override val boosterStrategy: BoosterStrategy = PlayBooster(
+        wildcardSlots = listOf(
+            PlayBooster.wildcard(common = 0.18, uncommon = 0.58, rare = 0.19, mythic = 0.02),
+            PlayBooster.wildcard(common = 0.604, uncommon = 0.298, rareOrMythic = 0.076),
+        ),
+    )
 
     private const val CARDS_PACKAGE = "com.wingedsheep.mtg.sets.definitions.ecl.cards"
 }

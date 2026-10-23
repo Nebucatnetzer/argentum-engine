@@ -2,6 +2,9 @@ package com.wingedsheep.mtg.sets.definitions.fdn
 
 import com.wingedsheep.mtg.sets.discovery.CardDiscovery
 import com.wingedsheep.sdk.core.Color
+import com.wingedsheep.sdk.limited.BoosterStrategy
+import com.wingedsheep.sdk.limited.LandSlotBooster
+import com.wingedsheep.sdk.limited.PlayBooster
 import com.wingedsheep.sdk.model.CardDefinition
 import com.wingedsheep.sdk.model.MtgSet
 import com.wingedsheep.sdk.model.Printing
@@ -82,6 +85,29 @@ object FoundationsSet : MtgSet {
             colors = setOf(Color.WHITE),
         ),
     )
+
+    /**
+     * Play Booster: the non-foil wildcard is 18.5% C / 60.7% U / 20.8% R-M and the traditional-foil wildcard 59.9% C /
+     * 31.4% U / 8.5% R-M. The land slot is a common gain land half the time and a basic otherwise. Figures from WotC's
+     * "Collecting Foundations" article, as kept in taw/magic-search-engine `data/boosters`.
+     */
+    override val boosterStrategy: BoosterStrategy by lazy {
+        LandSlotBooster(
+            base = PlayBooster(
+                wildcardSlots = listOf(
+                    PlayBooster.wildcard(common = 0.185, uncommon = 0.607, rareOrMythic = 0.208),
+                    PlayBooster.wildcard(common = 0.599, uncommon = 0.314, rareOrMythic = 0.085),
+                ),
+            ),
+            nonbasicLandNames = setOf(
+                "Bloodfell Caves", "Blossoming Sands", "Dismal Backwater", "Jungle Hollow", "Rugged Highlands",
+                "Scoured Barrens", "Swiftwater Cliffs", "Thornwood Falls", "Tranquil Cove",
+                "Wind-Scarred Crag",
+            ),
+            basicLands = basicLands.filter { it.metadata.inBooster },
+            nonbasicChance = 0.5,
+        )
+    }
 
     private const val CARDS_PACKAGE = "com.wingedsheep.mtg.sets.definitions.fdn.cards"
 }

@@ -46,7 +46,7 @@ class PlayBoosterTest : DescribeSpec({
             }
         }
 
-        it("rolls roughly 20% of wildcards as rare or mythic, so some packs carry extra rares") {
+        it("rolls some wildcards as rare or mythic, so some packs carry extra rares") {
             val pool = generousPool()
             var extraRareOrMythicPacks = 0
             val runs = 500
@@ -57,7 +57,7 @@ class PlayBoosterTest : DescribeSpec({
                 }
                 if (rareOrMythic >= 2) extraRareOrMythicPacks++
             }
-            // Two ~20% wildcard slots → ~36% of packs hold a 2nd rare/mythic. Wide tolerance.
+            // A ~20% and a ~10% wildcard slot → ~28% of packs hold a 2nd rare/mythic. Wide tolerance.
             val ratio = extraRareOrMythicPacks.toDouble() / runs
             ratio shouldBeGreaterThan 0.20
             ratio shouldBeLessThan 0.55
@@ -74,9 +74,10 @@ class PlayBoosterTest : DescribeSpec({
 
         it("rolls wildcard rarities from custom weights, falling through rarities the pool lacks") {
             // An Epilogue-style pack: no commons, 2 uncommons, a rare/mythic, two 1-in-6 rare wildcards.
+            val epilogueWildcard = linkedMapOf(Rarity.UNCOMMON to 40.0, Rarity.RARE to 7.0, Rarity.MYTHIC to 1.0)
             val strategy = PlayBooster(
-                commons = 0, uncommons = 2, raresOrMythics = 1, wildcards = 2,
-                wildcardWeights = linkedMapOf(Rarity.UNCOMMON to 40.0, Rarity.RARE to 7.0, Rarity.MYTHIC to 1.0),
+                commons = 0, uncommons = 2, raresOrMythics = 1,
+                wildcardSlots = listOf(epilogueWildcard, epilogueWildcard),
             )
             val pool = uncommonsPool(15) + raresPool(25) + mythicsPool(10)
             val runs = 3000
@@ -93,8 +94,24 @@ class PlayBoosterTest : DescribeSpec({
             (wildcardRares.toDouble() / (runs * 2)) shouldBe (1.0 / 6 plusOrMinus 0.02)
         }
 
-        it("keeps the default wildcard odds when none are given") {
-            PlayBooster().wildcardWeights shouldBe PlayBooster.DEFAULT_WILDCARD_WEIGHTS
+        it("keeps the default non-foil and foil wildcard odds when none are given") {
+            PlayBooster().wildcardSlots shouldBe listOf(PlayBooster.DEFAULT_WILDCARD, PlayBooster.DEFAULT_FOIL_WILDCARD)
+        }
+
+        it("rolls each wildcard slot from its own odds") {
+            val commonOnly = PlayBooster.wildcard(common = 1.0, uncommon = 0.0, rareOrMythic = 0.0)
+            val rareOnly = PlayBooster.wildcard(common = 0.0, uncommon = 0.0, rare = 1.0, mythic = 0.0)
+            val strategy = PlayBooster(wildcardSlots = listOf(commonOnly, rareOnly))
+            repeat(50) { seed ->
+                val pack = strategy.generate(generousPool(), Random(seed.toLong()))
+                pack shouldHaveSize 13
+                pack.count { it.metadata.rarity == Rarity.COMMON } shouldBe 8
+                pack.count { it.metadata.rarity == Rarity.RARE || it.metadata.rarity == Rarity.MYTHIC } shouldBe 2
+            }
+        }
+
+        it("trades its rare slot for an uncommon") {
+            PlayBooster().withRareSlotAsUncommon() shouldBe PlayBooster(uncommons = 4, raresOrMythics = 0)
         }
 
         it("fills wildcard slots from other rarities when commons run dry") {
