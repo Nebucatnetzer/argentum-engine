@@ -15,7 +15,14 @@ data class StandardBooster(
     val uncommons: Int = 3,
     val rares: Int = 1,
     val mythicChance: Double = 0.125,
-) : BoosterStrategy {
+) : RarityCountBooster {
+
+    override val rareSlots: Int get() = rares
+
+    override fun withRareSlotAsUncommon(): StandardBooster {
+        require(rares > 0) { "No rare slot to trade" }
+        return copy(uncommons = uncommons + 1, rares = rares - 1)
+    }
 
     override fun generate(pool: List<CardDefinition>, random: Random): List<CardDefinition> {
         val picker = RarityPicker(pool, random)
@@ -24,19 +31,12 @@ data class StandardBooster(
         repeat(commons) { picker.pick(Rarity.COMMON)?.let(booster::add) }
         repeat(uncommons) { picker.pick(Rarity.UNCOMMON)?.let(booster::add) }
         repeat(rares) {
-            val card = pickRareOrMythic(picker, random)
+            val card = picker.pickRareOrMythic(mythicChance)
+                ?: picker.pick(Rarity.UNCOMMON)
+                ?: picker.pick(Rarity.COMMON)
                 ?: throw IllegalStateException("No cards available for booster generation")
             booster.add(card)
         }
         return booster
-    }
-
-    private fun pickRareOrMythic(picker: RarityPicker, random: Random): CardDefinition? {
-        val rolledMythic = picker.hasAny(Rarity.MYTHIC) && random.nextDouble() < mythicChance
-        val firstChoice = if (rolledMythic) Rarity.MYTHIC else Rarity.RARE
-        return picker.pick(firstChoice)
-            ?: picker.pick(Rarity.RARE)
-            ?: picker.pick(Rarity.UNCOMMON)
-            ?: picker.pick(Rarity.COMMON)
     }
 }

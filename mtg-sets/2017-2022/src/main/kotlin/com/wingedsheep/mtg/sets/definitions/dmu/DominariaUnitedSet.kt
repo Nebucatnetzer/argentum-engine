@@ -2,10 +2,14 @@ package com.wingedsheep.mtg.sets.definitions.dmu
 
 import com.wingedsheep.mtg.sets.discovery.CardDiscovery
 import com.wingedsheep.sdk.limited.BoosterStrategy
-import com.wingedsheep.sdk.limited.LegendarySlotBooster
+import com.wingedsheep.sdk.limited.DedicatedSlot
+import com.wingedsheep.sdk.limited.DedicatedSlotBooster
+import com.wingedsheep.sdk.limited.SheetSelector
+import com.wingedsheep.sdk.limited.StandardBooster
 import com.wingedsheep.sdk.model.CardDefinition
 import com.wingedsheep.sdk.model.MtgSet
 import com.wingedsheep.sdk.model.Printing
+import com.wingedsheep.sdk.model.Rarity
 
 /**
  * Dominaria United (2022)
@@ -25,7 +29,10 @@ object DominariaUnitedSet : MtgSet {
      * uncommons and a nonlegendary rare/mythic (9 in 12). The basic land and the traditional-foil
      * replacement of a common are omitted; the generator supplies basics at deck building.
      */
-    override val boosterStrategy: BoosterStrategy = LegendarySlotBooster(commons = 10, uncommons = 3, legendaryRareChance = 0.25)
+    override val boosterStrategy: BoosterStrategy = DedicatedSlotBooster(
+        base = StandardBooster(commons = 10, uncommons = 2),
+        slots = listOf(DedicatedSlot(SheetSelector.LegendaryCreature, mapOf(Rarity.UNCOMMON to 1.0), rareChance = 0.25)),
+    )
 
     override val cards: List<CardDefinition> by lazy {
         CardDiscovery.findIn(CARDS_PACKAGE)

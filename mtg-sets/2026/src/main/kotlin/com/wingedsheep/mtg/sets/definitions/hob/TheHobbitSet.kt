@@ -1,6 +1,9 @@
 package com.wingedsheep.mtg.sets.definitions.hob
 
 import com.wingedsheep.mtg.sets.discovery.CardDiscovery
+import com.wingedsheep.sdk.limited.BoosterStrategy
+import com.wingedsheep.sdk.limited.LandSlotBooster
+import com.wingedsheep.sdk.limited.PlayBooster
 import com.wingedsheep.sdk.model.CardDefinition
 import com.wingedsheep.sdk.model.MtgSet
 import com.wingedsheep.sdk.model.Printing
@@ -111,6 +114,28 @@ object TheHobbitSet : MtgSet {
             imageUri = "https://cards.scryfall.io/normal/front/d/1/d1892b78-7663-4cbd-a732-9a4b0b18d4c8.jpg?1785498054",
         ),
     )
+
+    /**
+     * Play Booster: the non-foil wildcard is 75% C / 4.1% U / 20.9% R-M (WotC's published figures) and the
+     * traditional-foil wildcard 60.5% C / 31% U / 8.7% R-M. The land slot is a common dual land 60% of the time and a
+     * basic otherwise. Figures from WotC's "Collecting The Hobbit" article, as kept in taw/magic-search-engine
+     * `data/boosters`.
+     */
+    override val boosterStrategy: BoosterStrategy by lazy {
+        LandSlotBooster(
+            base = PlayBooster(
+                wildcardSlots = listOf(
+                    PlayBooster.wildcard(common = 0.75, uncommon = 0.041, rareOrMythic = 0.209),
+                    PlayBooster.wildcard(common = 0.6047, uncommon = 0.3099, rareOrMythic = 0.0865),
+                ),
+            ),
+            nonbasicLandNames = setOf(
+                "Elvenking's Halls", "Goblin-town", "Iron Hills", "Lake-town", "Mirkwood",
+            ),
+            basicLands = basicLands.filter { it.metadata.inBooster },
+            nonbasicChance = 0.6,
+        )
+    }
 
     private const val CARDS_PACKAGE = "com.wingedsheep.mtg.sets.definitions.hob.cards"
 }

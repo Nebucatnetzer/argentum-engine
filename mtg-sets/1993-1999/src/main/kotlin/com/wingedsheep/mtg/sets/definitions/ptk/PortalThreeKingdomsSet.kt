@@ -1,6 +1,8 @@
 package com.wingedsheep.mtg.sets.definitions.ptk
 
 import com.wingedsheep.mtg.sets.discovery.CardDiscovery
+import com.wingedsheep.sdk.limited.BoosterStrategy
+import com.wingedsheep.sdk.limited.StandardBooster
 import com.wingedsheep.sdk.model.CardDefinition
 import com.wingedsheep.sdk.model.MtgSet
 import com.wingedsheep.sdk.model.Printing
@@ -28,6 +30,11 @@ object PortalThreeKingdomsSet : MtgSet {
     override val printings: List<Printing> by lazy {
         CardDiscovery.findPrintingsIn(CARDS_PACKAGE)
     }
+
+    /**
+     * Boosters held 10 cards: 2 basic lands (supplied at deck building), 5 commons, 2 uncommons and a rare.
+     */
+    override val boosterStrategy: BoosterStrategy = StandardBooster(commons = 5, uncommons = 2)
 
     private const val CARDS_PACKAGE = "com.wingedsheep.mtg.sets.definitions.ptk.cards"
 }

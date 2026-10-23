@@ -37,12 +37,13 @@ object MarchOfTheMachineTheAftermathSet : MtgSet {
         commons = 0,
         uncommons = 2,
         raresOrMythics = 1,
-        wildcards = 2,
-        wildcardWeights = linkedMapOf(
-            Rarity.UNCOMMON to 40.0,
-            Rarity.RARE to 7.0,
-            Rarity.MYTHIC to 1.0,
-        ),
+        wildcardSlots = List(2) {
+            linkedMapOf(
+                Rarity.UNCOMMON to 40.0,
+                Rarity.RARE to 7.0,
+                Rarity.MYTHIC to 1.0,
+            )
+        },
     )
 
     override val cards: List<CardDefinition> by lazy {

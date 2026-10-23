@@ -460,34 +460,57 @@ plus the frame fields:
 metadata (set code, collector number, art, artist, Scryfall id, and the back-face art for genuine DFCs) and leaves the
 card's oracle identity untouched.
 
-**Legendary-slot boosters** — `LegendarySlotBooster(commons, uncommons, legendaryRareChance, mythicChance)` opens
-exactly one legendary creature per pack. With `legendaryRareChance` it is a rare or mythic in the rare slot beside
-`uncommons` nonlegendary uncommons; otherwise it is an uncommon taking one uncommon slot, beside a nonlegendary
-rare/mythic. The other slots never hold a legendary creature. An empty tier (host bans) falls back to the other;
-no legendary creatures at all gives a `StandardBooster`. Dominaria United uses `legendaryRareChance = 0.25`.
-`GuaranteedLegendaryBooster` (Dominaria) is the older shape: one legendary picked uniformly across rarities,
-replacing the slot of its rarity.
+**Booster collation matches paper.** Each complete set's `boosterStrategy` follows its paper booster — the slot
+layout and odds from WotC's "Collecting …" articles and print-sheet checklists, as kept in taw/magic-search-engine
+`data/boosters` — minus what the engine doesn't model: foils, The List, Special Guests, cards from bonus sheets that
+aren't in the engine, and the basic-land slot of a set whose land slot holds only basics (basics are supplied at deck
+building). The strategies compose:
 
-**Double-faced-slot boosters** — `DoubleFacedSlotBooster(commons, uncommons, doubleFacedUncommonChance, mythicChance)`
-opens one double-faced common or uncommon per pack in its own slot (an uncommon with `doubleFacedUncommonChance`,
-default 1/3 — an estimate from per-card sheet frequency; WotC doesn't publish the split), beside `commons` commons, `uncommons` uncommons and a rare/mythic. Ordinary common/uncommon slots
-never hold a double-faced card; double-faced rares and mythics stay in the rare slot. An empty tier (host bans) falls
-back to the other; no double-faced commons or uncommons at all turns the slot into one more common. Kamigawa: Neon
-Dynasty uses `DoubleFacedSlotBooster(commons = 9, uncommons = 3)`.
+**Dedicated-slot boosters** — `DedicatedSlotBooster(base, slots)` adds slots that each draw from their own print
+sheet to a `StandardBooster` or `PlayBooster` base. A `DedicatedSlot(sheet, rarityWeights, rareChance, sharedRarities,
+mythicChance)` names its cards with a `SheetSelector` — `DoubleFaced`, `Battle`, `LegendaryCreature`,
+`Named(names)`, `Except(matching, except)` — and opens a rarity rolled from `rarityWeights`. Its sheet is the
+selected cards at those rarities (plus rare and mythic when `rareChance > 0`), and they leave the base's pool unless
+their rarity is in `sharedRarities`. With `rareChance` the slot holds the pack's one rare or mythic instead, and the
+base trades its rare slot for an uncommon (`RarityCountBooster.withRareSlotAsUncommon`); the slots' chances are rolled
+together, so a pack never opens two. A dry sheet (host bans) opens the rolled rarity from the ordinary sheets. In use:
 
-**Two-double-faced-slot boosters** — `TwoDoubleFacedSlotBooster(commons, uncommons, doubleFacedRareChance, mythicChance)`
-opens two double-faced cards per pack: a double-faced common in its own slot, and a double-faced uncommon/rare/mythic
-paired with a single-faced uncommon-or-rare slot so the pair holds exactly one rare or mythic (the double-faced card
-is the rare with `doubleFacedRareChance`, default 1/6). The rest is `commons` single-faced commons and `uncommons - 1`
-single-faced uncommons; double-faced cards never appear outside their two slots. An empty double-faced tier (host
-bans) falls back to the single-faced sheet of the same rarity. Innistrad: Midnight Hunt uses
-`TwoDoubleFacedSlotBooster(commons = 9, uncommons = 3)`.
+- Innistrad: Midnight Hunt / Crimson Vow — base `StandardBooster(9, 2)`, a double-faced common slot and a double-faced
+  uncommon slot with `rareChance = 1.0 / 6`.
+- Kamigawa: Neon Dynasty / The Lost Caverns of Ixalan — base `StandardBooster(9, 3)`, one double-faced common-or-uncommon
+  slot (double-faced rares stay in the rare slot because the slot opens no rares).
+- March of the Machine — base `StandardBooster(8, 2)`, an `Except(DoubleFaced, Battle)` common-or-uncommon slot
+  (`rareChance = 15/140`) and a `Battle` uncommon slot (`rareChance = 27/140`).
+- Dominaria / Dominaria United — base `StandardBooster(10, 2)`, a `LegendaryCreature` uncommon slot, `rareChance = 0.25`.
+- Modern Horizons 3 — a `Named` new-to-Modern reprint slot (75% U / 22.5% R / 2.5% M) on a 6-common Play Booster.
+- Innistrad Remastered — a double-faced common slot on a 5-common Play Booster.
+- Teenage Mutant Ninja Turtles — a `Named` legendary-Turtle slot with `sharedRarities = setOf(RARE, MYTHIC)`, so the
+  rare Turtles also stay on the rare sheet.
 
-**Play Booster wildcard odds** — `PlayBooster(commons, uncommons, wildcards, raresOrMythics, mythicChance, wildcardWeights)`
-rolls each wildcard slot's rarity from `wildcardWeights` (relative odds per `Rarity`, default 50% C / 30% U / 17.5% R /
-2.5% M); a rolled rarity the pool lacks falls through common → uncommon → rare → mythic. March of the Machine: The
-Aftermath's 5-card Epilogue Booster is `PlayBooster(commons = 0, uncommons = 2, raresOrMythics = 1, wildcards = 2,
-wildcardWeights = …)` with each wildcard a rare or mythic about 1 time in 6.
+**Print-sheet boosters** — `PrintSheetBooster(sheets)` collates straight from paper print sheets for the sets that
+predate rarity slots: each `PrintSheet(slots, cardCounts)` opens `slots` names with probability proportional to how
+many times each was printed on the sheet (art variants summed). Arabian Nights, Antiquities, The Dark and Fallen
+Empires open 8-card packs (6 from the common sheet, 2 from the uncommon sheet — Scryfall's "rare" there is a scarcer
+uncommon-sheet card); Legends opens 11 / 3 / 1 from its three sheets with the C2/U2 doubling.
+
+**Play Booster wildcard odds** — `PlayBooster(commons, uncommons, raresOrMythics, mythicChance, wildcardSlots)` rolls
+each wildcard from its own rarity mix in `wildcardSlots` (relative odds per `Rarity`). The default pair is the
+non-foil wildcard `PlayBooster.DEFAULT_WILDCARD` (17% C / 63% U / 20% R-M) and the foil wildcard
+`DEFAULT_FOIL_WILDCARD` (58% C / 32% U / 10% R-M); sets pass their published figures with
+`PlayBooster.wildcard(common, uncommon, rareOrMythic)` (split 7:1 rare:mythic) or
+`PlayBooster.wildcard(common, uncommon, rare, mythic)`. A rolled rarity the pool lacks falls through by weight, then
+common → uncommon → rare → mythic. March of the Machine: The Aftermath's 5-card Epilogue Booster is
+`PlayBooster(commons = 0, uncommons = 2, raresOrMythics = 1, wildcardSlots = List(2) { … })` with each wildcard a rare
+or mythic about 1 time in 6; Innistrad Remastered adds a third slot for its retro-frame card.
+
+**Land-slot boosters** — `LandSlotBooster(base, nonbasicLandNames, basicLands, nonbasicChance)` reserves named
+nonbasic lands for a dedicated final slot. The wrapper removes those names from every base slot (including the
+wildcards) and adds one land: an available nonbasic with `nonbasicChance` (the set's published odds), otherwise one
+of the supplied basic arts; either group falls back to the other when empty. Basic arts are supplied explicitly
+(`basicLands.filter { it.metadata.inBooster }`) because the generator strips basics from the ordinary pool. Host bans
+remove nonbasics; basics remain available as they do in deck building. Used by every set whose land slot carries
+common duals or gain lands — e.g. Foundations (gain lands, 50%), Tarkir: Dragonstorm (gain lands, 100/115), The Lost
+Caverns of Ixalan (common Caves, 70%), Reality Fracture (6/11).
 
 **Echoed-pair boosters** — override `MtgSet.boosterStrategy` with
 `EchoedPairsPlayBooster(echoedPairs = listOf("First half" to "Second half", ...))`.
@@ -495,12 +518,7 @@ Both halves must be in the pool to open as a pair; the third echoed card exclude
 Missing echoed slots use remaining echoed cards, then unused regular uncommons, commons, rares, and
 mythics in that order. This preserves those slots when host bans or incomplete pools exhaust uncommons,
 without duplicating names. Other regular slots exclude echoed names; the wildcard includes them.
-Compose with `LandSlotBooster(base, nonbasicLandNames, basicLands, basicWeight, nonbasicWeight)` to reserve
-named lands for a dedicated final slot. The wrapper removes those names from every base slot (including
-the wildcard) and adds one weighted land from the available nonbasics and supplied basic arts. Basic
-arts are supplied explicitly because the generator strips basics from the ordinary pool. Host bans
-remove nonbasics; basics remain available as they do in deck building. FRA uses ten duals at weight 3
-and 25 basic arts at weight 1, giving a 6/11 dual chance and 14 cards per pack.
+Compose with `LandSlotBooster` to reserve its ten duals for the land slot (14 cards per pack).
 
 **Showcase / borderless in boosters** — a set advertises a per-card variant rate via `MtgSet.boosterVariantChance`
 (default `0.0`). When non-zero, `BoosterGenerator` rolls each generated card independently and, on a hit, re-skins it

@@ -1,6 +1,9 @@
 package com.wingedsheep.mtg.sets.definitions.dsk
 
 import com.wingedsheep.mtg.sets.discovery.CardDiscovery
+import com.wingedsheep.sdk.limited.BoosterStrategy
+import com.wingedsheep.sdk.limited.LandSlotBooster
+import com.wingedsheep.sdk.limited.PlayBooster
 import com.wingedsheep.sdk.model.CardDefinition
 import com.wingedsheep.sdk.model.MtgSet
 import com.wingedsheep.sdk.model.Printing
@@ -28,6 +31,29 @@ object DuskmournSet : MtgSet {
 
     override val printings: List<Printing> by lazy {
         CardDiscovery.findPrintingsIn(CARDS_PACKAGE)
+    }
+
+    /**
+     * Play Booster: the non-foil wildcard is 18.1% C / 67.1% U / 15.1% R-M and the traditional-foil wildcard 58% C /
+     * 32% U / 10% R-M. The land slot is one of the ten common dual lands half the time and a basic otherwise. Figures
+     * from WotC's "Collecting Duskmourn: House of Horror" article, as kept in taw/magic-search-engine `data/boosters`.
+     */
+    override val boosterStrategy: BoosterStrategy by lazy {
+        LandSlotBooster(
+            base = PlayBooster(
+                wildcardSlots = listOf(
+                    PlayBooster.wildcard(common = 0.181, uncommon = 0.671, rareOrMythic = 0.151),
+                    PlayBooster.wildcard(common = 0.58, uncommon = 0.32, rareOrMythic = 0.1),
+                ),
+            ),
+            nonbasicLandNames = setOf(
+                "Abandoned Campground", "Bleeding Woods", "Etched Cornfield", "Lakeside Shack", "Murky Sewer",
+                "Neglected Manor", "Peculiar Lighthouse", "Raucous Carnival", "Razortrap Gorge",
+                "Strangled Cemetery",
+            ),
+            basicLands = basicLands.filter { it.metadata.inBooster },
+            nonbasicChance = 0.5,
+        )
     }
 
     private const val CARDS_PACKAGE = "com.wingedsheep.mtg.sets.definitions.dsk.cards"

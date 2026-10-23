@@ -27,7 +27,7 @@ class LandSlotBoosterTest : DescribeSpec({
     val dualNames = duals.mapTo(hashSetOf()) { it.name }
     val strategy = LandSlotBooster(
         base = EchoedPairsPlayBooster(emptyList()), nonbasicLandNames = dualNames,
-        basicLands = basics, nonbasicWeight = 3,
+        basicLands = basics, nonbasicChance = 6.0 / 11,
     )
 
     describe("paper land slot") {

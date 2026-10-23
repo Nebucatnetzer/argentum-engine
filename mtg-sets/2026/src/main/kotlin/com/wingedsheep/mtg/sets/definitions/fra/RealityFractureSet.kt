@@ -45,8 +45,8 @@ object RealityFractureSet : MtgSet {
                 "Transformative Commons", "Vigorbloom Annex",
             ),
             basicLands = basicLands.filter { it.metadata.inBooster },
-            // 10 duals × 3 vs. 25 basic arts × 1: 6/11 dual, 5/11 basic.
-            nonbasicWeight = 3,
+            // Paper sheet: 10 duals × 3 vs. 25 basic arts × 1 — 6/11 dual, 5/11 basic.
+            nonbasicChance = 6.0 / 11,
         )
     }
 
