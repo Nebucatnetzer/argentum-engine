@@ -67,6 +67,40 @@ class IncrementMechanicScenarioTest : ScenarioTestBase() {
             }
         }
 
+        context("the triggering spell is countered") {
+
+            test("Increment still resolves and adds the counter") {
+                var builder = scenario()
+                    .withPlayers("Player", "Opponent")
+                    .withCardOnBattlefield(1, "Cuboid Colony")
+                    .withCardInHand(1, "Grizzly Bears")
+                    .withLandsOnBattlefield(1, "Forest", 2)
+                    .withCardInHand(2, "Counterspell")
+                    .withLandsOnBattlefield(2, "Island", 2)
+                    .withActivePlayer(1)
+                    .inPhase(Phase.PRECOMBAT_MAIN, Step.PRECOMBAT_MAIN)
+                repeat(6) { builder = builder.withCardInLibrary(1, "Forest") }
+                repeat(6) { builder = builder.withCardInLibrary(2, "Forest") }
+                val game = builder.build()
+
+                // 2 mana > min(1, 1) = 1 -> Increment triggers above Grizzly Bears.
+                game.castSpell(1, "Grizzly Bears").error shouldBe null
+                game.state.stack.size shouldBe 2
+
+                // The opponent counters the Bears with the Increment trigger still on the stack.
+                game.passPriority()
+                game.castSpellTargetingStackSpell(2, "Counterspell", "Grizzly Bears").error shouldBe null
+                game.resolveStack()
+
+                withClue("the Bears were countered") {
+                    game.isInGraveyard(1, "Grizzly Bears") shouldBe true
+                }
+                withClue("Increment reads the mana spent as the spell was cast, so countering it doesn't stop the counter") {
+                    game.plusCounters("Cuboid Colony") shouldBe 1
+                }
+            }
+        }
+
         context("Hungry Graffalon (3/4) — 'power or toughness' means the smaller stat") {
 
             test("a 3-mana spell adds nothing but a 4-mana spell does (threshold = power 3, not toughness 4)") {
