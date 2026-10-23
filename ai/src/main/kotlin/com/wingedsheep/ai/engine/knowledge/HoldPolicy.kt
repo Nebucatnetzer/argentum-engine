@@ -131,6 +131,12 @@ class HoldPolicy(
      */
     private val lifelinkWaitsForBlocks: Boolean = false,
     /**
+     * [AiProfile.tapToGrowAtTheirEndStep][com.wingedsheep.ai.engine.AiProfile.tapToGrowAtTheirEndStep]
+     * — hold a creature's "{T}: put counters on this creature" for the window where the tap costs
+     * no attack and no block. See [SelfTapGrowthWindow], which is where the whole idea lives.
+     */
+    private val tapToGrowAtTheirEndStep: Boolean = false,
+    /**
      * The profile's `EvaluationWeights.boardPresence`, so [RemovalPatience] can quote its discount
      * in the same currency as the board value it compares against. The default is the compiled
      * fallback's, which is what every profile that does not opt in would have used anyway.
@@ -267,7 +273,7 @@ class HoldPolicy(
     ): TimingVerdict {
         if (activation == null) return TimingVerdict.Neutral
         if (!(holdExpiringGrantsForCombat || refuseUnspendableGrants || refuseDeadSearches ||
-                refuseEmptyPayoffs || drawWithIdleMana || refuseWastedPayoffs)
+                refuseEmptyPayoffs || drawWithIdleMana || refuseWastedPayoffs || tapToGrowAtTheirEndStep)
         ) {
             return TimingVerdict.Neutral
         }
@@ -285,6 +291,10 @@ class HoldPolicy(
             return TimingVerdict.NoWindow
         }
         if (drawWithIdleMana) drawActivationVerdict(state, playerId, ability)?.let { return it }
+        // A tap that costs an attack or a block, for counters the opponent's end step buys for free.
+        if (tapToGrowAtTheirEndStep && SelfTapGrowthWindow.holds(state, playerId, ability, activation)) {
+            return TimingVerdict.NoWindow
+        }
         if (!(holdExpiringGrantsForCombat || refuseUnspendableGrants || refuseWastedPayoffs)) {
             return TimingVerdict.Neutral
         }

@@ -235,6 +235,11 @@ class Strategist(
      */
     private val lifelinkWaitsForBlocks: Boolean = false,
     /**
+     * [AiProfile.tapToGrowAtTheirEndStep] — passed straight through to [HoldPolicy], which hands it
+     * to [com.wingedsheep.ai.engine.knowledge.SelfTapGrowthWindow].
+     */
+    private val tapToGrowAtTheirEndStep: Boolean = false,
+    /**
      * [AiProfile.convokeLandsFirst] — a convoke spell taps creatures only for what mana cannot
      * pay, cheapest creatures first. See [withAutomaticConvoke].
      */
@@ -275,6 +280,7 @@ class Strategist(
         taxCountersReadTheirMana = taxCountersReadTheirMana,
         refuseWastedPayoffs = refuseWastedPayoffs,
         lifelinkWaitsForBlocks = lifelinkWaitsForBlocks,
+        tapToGrowAtTheirEndStep = tapToGrowAtTheirEndStep,
         boardPresenceWeight = boardPresenceWeight,
     )
 

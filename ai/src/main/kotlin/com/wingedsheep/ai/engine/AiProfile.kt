@@ -1222,6 +1222,19 @@ data class AiProfile(
      * [refuseUnspendableGrants] refuses it on a creature that did not block.
      */
     val lifelinkWaitsForBlocks: Boolean = false,
+    /**
+     * Hold a creature's "{T}: put a counter on this creature" until the tap costs nothing: an
+     * opponent's turn, after blockers, with our own turn next.
+     *
+     * Player report (2026-10-23): the engine AI kept tapping Clockwork Hydra ("{T}: Put a +1/+1
+     * counter on this creature") in its own precombat main and in the opponent's precombat main,
+     * so a 5/5 that grew every turn never attacked and never blocked. The leaf prices a counter and
+     * has no term for the attack or block the tap gave up. Activated at the opponent's end step
+     * instead, the counter arrives before our next turn and the creature untaps with it, so waiting
+     * gives up nothing but a turn of the counter on a creature that could not have used it. See
+     * [com.wingedsheep.ai.engine.knowledge.SelfTapGrowthWindow]. Pinned by `SelfTapGrowthWindowTest`.
+     */
+    val tapToGrowAtTheirEndStep: Boolean = false,
     /** Non-null profiles may only be selected automatically for this set. Arena selection stays explicit. */
     val restrictedToSet: String? = null,
 ) {
@@ -2178,6 +2191,7 @@ data class AiProfile(
             anticipateCombatResponses = true,
             pressWhenAhead = true,
             lifelinkWaitsForBlocks = true,
+            tapToGrowAtTheirEndStep = true,
         )
 
         /**

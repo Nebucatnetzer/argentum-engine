@@ -360,6 +360,7 @@ class AIPlayer(
                     taxCountersReadTheirMana = profile.taxCountersReadTheirMana,
                     refuseWastedPayoffs = profile.refuseWastedPayoffs,
                     lifelinkWaitsForBlocks = profile.lifelinkWaitsForBlocks,
+                    tapToGrowAtTheirEndStep = profile.tapToGrowAtTheirEndStep,
                     convokeLandsFirst = profile.convokeLandsFirst,
                     // Same seam as `CombatAdvisor`'s `lifeWeight`: a raw Phase 9 profile resolves
                     // to the compiled fallback here, which is the right answer for a policy that
