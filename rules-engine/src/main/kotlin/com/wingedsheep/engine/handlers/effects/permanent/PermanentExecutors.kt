@@ -55,7 +55,7 @@ import com.wingedsheep.engine.handlers.effects.permanent.protection.ChooseColorT
 import com.wingedsheep.engine.handlers.effects.permanent.protection.GrantCantBeBlockedByChosenColorExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.protection.GrantHexproofFromChosenColorExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.protection.GrantProtectionFromChosenColorExecutor
-import com.wingedsheep.engine.handlers.effects.permanent.protection.GrantProtectionsSharedByGroupExecutor
+import com.wingedsheep.engine.handlers.effects.permanent.protection.GrantKeywordVariantsSharedByGroupExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.protection.GrantProtectionFromChosenCardTypeExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.protection.GrantProtectionFromColorlessOrChosenColorExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.stats.ModifyStatsExecutor
@@ -94,6 +94,7 @@ import com.wingedsheep.engine.handlers.effects.permanent.types.ChangeColorExecut
 import com.wingedsheep.engine.handlers.effects.permanent.types.ChangeColorToChosenExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.types.ChangeGroupColorExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.types.BecomeCopyOfLinkedExileExecutor
+import com.wingedsheep.engine.handlers.effects.permanent.types.ExchangeTextBoxesExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.types.EachPermanentBecomesCopyOfTargetExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.types.SetCreatureSubtypesExecutor
 import com.wingedsheep.engine.handlers.effects.permanent.types.SetGroupCreatureSubtypesExecutor
@@ -158,6 +159,7 @@ class PermanentExecutors(
         RemoveCountersExecutor(amountEvaluator = amountEvaluator),
         RemoveAnyNumberOfCountersExecutor(amountEvaluator = amountEvaluator),
         com.wingedsheep.engine.handlers.effects.permanent.counters.PayCountersExecutor(),
+        com.wingedsheep.engine.handlers.effects.permanent.counters.RemoveCountersFromAmongExecutor(amountEvaluator.predicates),
         com.wingedsheep.engine.handlers.effects.permanent.counters.PayExactCountersExecutor(amountEvaluator),
         com.wingedsheep.engine.handlers.effects.permanent.counters.ConvertCountersToTokensExecutor(),
         MoveCountersEachKindMissingExecutor(predicateEvaluator = zones.predicateEvaluator),
@@ -203,6 +205,7 @@ class PermanentExecutors(
         ChangeGroupColorExecutor(predicateEvaluator = zones.predicateEvaluator),
         EachPermanentBecomesCopyOfTargetExecutor(predicateEvaluator = zones.predicateEvaluator, cardRegistry = cardRegistry),
         BecomeCopyOfLinkedExileExecutor(cardRegistry),
+        ExchangeTextBoxesExecutor(cardRegistry),
         LoseAllCreatureTypesExecutor(),
         MassAnimateExecutor(predicateEvaluator = zones.predicateEvaluator),
         SetCreatureSubtypesExecutor(),
@@ -237,7 +240,7 @@ class PermanentExecutors(
         GrantHarmonizeExecutor(),
         GrantKeywordExecutor(),
         GrantStaticAbilityExecutor(),
-        GrantReplacementEffectExecutor(),
+        GrantReplacementEffectExecutor(cardRegistry),
         RemoveKeywordExecutor(),
         GrantToEnchantedCreatureTypeGroupExecutor(),
         GrantStateTriggeredAbilityExecutor(),
@@ -266,12 +269,12 @@ class PermanentExecutors(
         // phasing
         PhaseOutExecutor(),
         PhaseOutUntilLeavesExecutor(),
-        PhaseInLinkedToSourceExecutor(),
+        PhaseInLinkedToSourceExecutor(cardRegistry, zones.predicateEvaluator),
         // protection
         ChooseColorThenExecutor(decisionHandler),
         GrantHexproofFromChosenColorExecutor(),
         GrantProtectionFromChosenColorExecutor(),
-        GrantProtectionsSharedByGroupExecutor(predicateEvaluator = zones.predicateEvaluator),
+        GrantKeywordVariantsSharedByGroupExecutor(predicateEvaluator = zones.predicateEvaluator),
         GrantProtectionFromChosenCardTypeExecutor(),
         GrantProtectionFromColorlessOrChosenColorExecutor(),
         GrantCantBeBlockedByChosenColorExecutor()

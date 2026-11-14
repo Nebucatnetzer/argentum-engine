@@ -1,0 +1,614 @@
+#!/usr/bin/env python3
+"""
+Guided launcher for contributing cards with an AI agent: `just contribute`.
+
+Checks the tools a loop needs, then asks:
+  1. what to build  — your deck or card list (paste it, or drop the file in), or a whole set
+  2. which model    — whatever of Claude Code and Codex is installed, or any model ID
+  3. how to deliver — commit on a local branch and open one PR yourself (the default, works from a
+                      fork), or — with push access — a reviewed PR per batch, merged once CI is green
+and starts scripts/card-loop. Nothing is pushed in local mode.
+"""
+
+from __future__ import annotations
+
+import codecs
+import os
+import re
+import shutil
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+SCRIPTS = Path(__file__).resolve().parent
+# The interactive UI uses Unix termios/tty APIs. Native Windows Python uses
+# the plain numbered prompts instead, even when attached to a console.
+TTY = os.name != "nt" and sys.stdin.isatty() and sys.stdout.isatty()
+
+
+def sgr(code: str, text: str) -> str:
+    return f"\033[{code}m{text}\033[0m" if TTY else text
+
+
+def bold(t): return sgr("1", t)
+def dim(t): return sgr("2", t)
+def green(t): return sgr("32", t)
+def red(t): return sgr("31", t)
+def yellow(t): return sgr("33", t)
+def accent(t): return sgr("36", t)
+
+
+def width() -> int:
+    return min(shutil.get_terminal_size((100, 24)).columns, 110)
+
+
+def visible(text: str) -> int:
+    return len(re.sub(r"\033\[[0-9;]*m", "", text))
+
+
+def clip(text: str, room: int) -> str:
+    return text if len(text) <= room else text[: max(0, room - 1)] + "…"
+
+
+def out(text: str = "") -> None:
+    sys.stdout.write(text + "\n")
+    sys.stdout.flush()
+
+
+def fail(message: str) -> None:
+    out(f"\n  {red('✗')} {message}\n")
+    sys.exit(1)
+
+
+def run(cmd: list[str], timeout: int = 30) -> subprocess.CompletedProcess:
+    try:
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+    except (OSError, subprocess.TimeoutExpired) as e:
+        return subprocess.CompletedProcess(cmd, 1, "", str(e))
+
+
+class Spinner:
+    """`with Spinner("Reading the card pool"):` — a one-line spinner, replaced by nothing when done."""
+
+    def __init__(self, label: str):
+        self.label, self.stop = label, threading.Event()
+
+    def __enter__(self):
+        if TTY:
+            import termios
+            self.fd = sys.stdin.fileno()
+            self.old = termios.tcgetattr(self.fd)
+            quiet = termios.tcgetattr(self.fd)
+            quiet[3] &= ~(termios.ECHO | termios.ICANON)
+            termios.tcsetattr(self.fd, termios.TCSADRAIN, quiet)
+            sys.stdout.write("\033[?25l")
+            self.thread = threading.Thread(target=self.spin, daemon=True)
+            self.thread.start()
+        return self
+
+    def spin(self):
+        frames = "⠋⠙⠹⠸⠼⠴⠦⠧⠇⠏"
+        i = 0
+        while not self.stop.is_set():
+            sys.stdout.write(f"\r\033[2K  {accent(frames[i % len(frames)])} {dim(self.label + '…')}")
+            sys.stdout.flush()
+            i += 1
+            time.sleep(0.08)
+
+    def __exit__(self, *exc):
+        if TTY:
+            import termios
+            self.stop.set()
+            self.thread.join()
+            termios.tcflush(self.fd, termios.TCIFLUSH)
+            termios.tcsetattr(self.fd, termios.TCSADRAIN, self.old)
+            sys.stdout.write("\r\033[2K\033[?25h")
+            sys.stdout.flush()
+
+
+# ── layout ───────────────────────────────────────────────────────────────────────────────────────
+
+STEPS = 3
+
+
+def header() -> None:
+    title = "Argentum · contribute cards"
+    sub = "Pick the cards, pick a model — an agent builds, tests and commits them."
+    inner = max(len(title), len(sub)) + 4
+    out()
+    out(accent("  ╭" + "─" * inner + "╮"))
+    out(accent("  │") + "  " + bold(title) + " " * (inner - len(title) - 2) + accent("│"))
+    out(accent("  │") + "  " + dim(sub) + " " * (inner - len(sub) - 2) + accent("│"))
+    out(accent("  ╰" + "─" * inner + "╯"))
+    out()
+
+
+def step_title(n: int, title: str) -> str:
+    return f"  {dim(f'{n}/{STEPS}')}  {bold(title)}"
+
+
+def answered(n: int, title: str, value: str, lines_to_clear: int) -> None:
+    """Collapse a finished question into one line: `✓ 1/3 Cards  Dina deck — 24 missing`."""
+    if TTY and lines_to_clear:
+        sys.stdout.write(f"\033[{lines_to_clear}A\033[J")
+    out(f"  {green('✓')} {dim(f'{n}/{STEPS}')}  {title:<7} {value}")
+
+
+# ── input ────────────────────────────────────────────────────────────────────────────────────────
+
+class RawTerminal:
+    def __enter__(self):
+        import termios
+        import tty
+        self.fd = sys.stdin.fileno()
+        self.old = termios.tcgetattr(self.fd)
+        tty.setcbreak(self.fd)
+        sys.stdout.write("\033[?25l")  # hide cursor
+        return self
+
+    def __exit__(self, *exc):
+        import termios
+        termios.tcsetattr(self.fd, termios.TCSADRAIN, self.old)
+        sys.stdout.write("\033[?25h")
+        sys.stdout.flush()
+
+
+def read_key(fd: int) -> str:
+    ch = os.read(fd, 1).decode(errors="ignore")
+    if ch == "\x1b":
+        ch += os.read(fd, 2).decode(errors="ignore")
+    return ch
+
+
+def choose(n: int, title: str, options: list[tuple[str, str]], default: int = 0) -> int:
+    """Arrow keys / j k / number, Enter to pick. Returns the index and clears the menu; the caller
+    prints the answer with answered()."""
+    pos = default
+    out(step_title(n, title))
+    if not TTY:
+        for i, (name, detail) in enumerate(options, 1):
+            out(f"     {i}. {name}  {dim(detail)}")
+        while True:
+            try:
+                raw = input(f"     Choose [1-{len(options)}, default {pos + 1}]: ").strip()
+            except EOFError:
+                raw = ""
+            if not raw:
+                break
+            if raw.isdigit() and 1 <= int(raw) <= len(options):
+                pos = int(raw) - 1
+                break
+        return pos
+
+    name_w = max(len(o[0]) for o in options)
+
+    def draw(first: bool):
+        if not first:
+            sys.stdout.write(f"\033[{len(options) + 1}A")
+        for i, (name, detail) in enumerate(options):
+            room = width() - name_w - 12
+            detail = clip(detail, room)
+            if i == pos:
+                line = f"   {accent('❯')} {accent(bold(name.ljust(name_w)))}  {dim(detail)}"
+            else:
+                line = f"     {name.ljust(name_w)}  {dim(detail)}"
+            sys.stdout.write("\033[2K" + line + "\n")
+        sys.stdout.write("\033[2K" + dim("     ↑/↓ to move · enter to choose · q to quit") + "\n")
+        sys.stdout.flush()
+
+    with RawTerminal() as term:
+        draw(True)
+        while True:
+            key = read_key(term.fd)
+            if key in ("\r", "\n"):
+                break
+            if key in ("\x03", "q", "\x1b"):
+                raise KeyboardInterrupt
+            if key in ("\x1b[A", "k"):
+                pos = (pos - 1) % len(options)
+            elif key in ("\x1b[B", "j"):
+                pos = (pos + 1) % len(options)
+            elif key.isdigit() and 1 <= int(key) <= len(options):
+                pos = int(key) - 1
+                draw(False)
+                break
+            draw(False)
+    sys.stdout.write(f"\033[{len(options) + 2}A\033[J")
+    sys.stdout.flush()
+    return pos
+
+
+def ask(prompt: str, default: str = "") -> str:
+    suffix = dim(f" ({default})") if default else ""
+    try:
+        value = input(f"     {prompt}{suffix}: ").strip()
+    except EOFError:
+        value = ""
+    return value or default
+
+
+def read_list() -> tuple[str, int]:
+    """A pasted list arrives in one go (bracketed paste) and ends the prompt by itself; typed names end
+    with an empty line. A dragged-in file shows up as its path. Returns the text and the rows drawn."""
+    if not TTY:
+        lines = []
+        while (line := sys.stdin.readline()) and line.strip() != "END":
+            lines.append(line.rstrip("\n"))
+        return "\n".join(lines), 0
+
+    decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
+    text, line, pasting, buf, rows = [], "", False, "", 0
+    sys.stdout.write("\033[?2004h     " + accent("› "))
+    sys.stdout.flush()
+    with RawTerminal() as term:
+        sys.stdout.write("\033[?25h")
+        while True:
+            buf += decoder.decode(os.read(term.fd, 4096))
+            while buf:
+                if buf.startswith("\x1b[200~"):
+                    pasting, buf = True, buf[6:]
+                    continue
+                if buf.startswith("\x1b[201~"):
+                    buf = buf[6:]
+                    text.append(line)
+                    sys.stdout.write("\033[?2004l\n")
+                    return "\n".join(text), rows + 1
+                if buf.startswith("\x1b") and len(buf) < 6 and "\x1b[200~".startswith(buf[:6]):
+                    break  # wait for the rest of the marker
+                ch, buf = buf[0], buf[1:]
+                if pasting:
+                    if ch in "\r\n":
+                        text.append(line)
+                        line = ""
+                        if len(text) % 5 == 0:
+                            sys.stdout.write(f"\r\033[2K     {accent('›')} {dim(f'{len(text)} lines…')}")
+                    else:
+                        line += ch
+                    continue
+                if ch == "\x03":
+                    raise KeyboardInterrupt
+                if ch == "\x04":
+                    if line:
+                        text.append(line)
+                    sys.stdout.write("\033[?2004l\n")
+                    return "\n".join(text), rows + 1
+                if ch in "\r\n":
+                    if not line.strip():
+                        if text:
+                            sys.stdout.write("\033[?2004l\n")
+                            return "\n".join(text), rows + 1
+                        continue
+                    text.append(line)
+                    line = ""
+                    rows += 1
+                    sys.stdout.write("\n     " + accent("› "))
+                elif ch in ("\x7f", "\b"):
+                    if line:
+                        line = line[:-1]
+                        sys.stdout.write("\b \b")
+                elif ch.isprintable():
+                    line += ch
+                    sys.stdout.write(ch)
+            sys.stdout.flush()
+
+
+def as_file(text: str) -> Path | None:
+    """A dropped file arrives as its path, sometimes quoted or with escaped spaces."""
+    lines = [l for l in text.strip().splitlines() if l.strip()]
+    if len(lines) != 1:
+        return None
+    raw = lines[0].strip().strip("'\"").replace("\\ ", " ")
+    path = Path(os.path.expanduser(raw))
+    return path if path.is_file() else None
+
+
+def slugify(text: str) -> str:
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")[:40].strip("-") or "my-list"
+
+
+# ── setup ────────────────────────────────────────────────────────────────────────────────────────
+
+def java_major() -> int | None:
+    res = run(["java", "-version"])
+    m = re.search(r'version "(\d+)', res.stderr + res.stdout)
+    return int(m.group(1)) if m else None
+
+
+def version(cmd: str) -> str:
+    m = re.search(r"\d+\.\d+(\.\d+)?", run([cmd, "--version"]).stdout)
+    return m.group(0) if m else ""
+
+
+def check_setup() -> dict[str, bool]:
+    with Spinner("Checking your setup"):
+        have = {t: shutil.which(t) is not None for t in ("git", "just", "jq", "claude", "codex")}
+        jv = java_major()
+        have["java"] = jv is not None and jv >= 25
+        versions = {t: version(t) for t in ("claude", "codex") if have[t]}
+        have["gh"] = shutil.which("gh") is not None and run(["gh", "auth", "status"]).returncode == 0
+
+    problems = []
+    for tool, hint in (("git", "https://git-scm.com"), ("just", "https://github.com/casey/just"),
+                       ("jq", "https://jqlang.org")):
+        if not have[tool]:
+            problems.append(f"{bold(tool)} is missing — {hint}")
+    if not have["java"]:
+        problems.append(f"{bold('JDK 25+')} is needed" + (f" (found {jv})" if jv else "") + " — https://adoptium.net")
+    if not (have["claude"] or have["codex"]):
+        problems.append(f"{bold('Claude Code')} (https://claude.com/claude-code) or {bold('Codex')} "
+                        "(https://github.com/openai/codex) — the agent that does the work")
+    if problems:
+        out(f"  {red('✗')} Almost there — install these first:")
+        for p in problems:
+            out(f"      • {p}")
+        out()
+        sys.exit(1)
+
+    agents = [f"Claude Code {versions['claude']}".strip() if have["claude"] else "",
+              f"Codex {versions['codex']}".strip() if have["codex"] else ""]
+    out(f"  {green('✓')} {dim('Setup ready ·')} {dim(' · '.join(a for a in agents if a))}"
+        f"{dim(' · JDK ' + str(jv))}")
+    out()
+    return have
+
+
+def push_access(have: dict[str, bool]) -> bool:
+    if not have["gh"]:
+        return False
+    perm = run(["gh", "repo", "view", "--json", "viewerPermission", "-q", ".viewerPermission"]).stdout.strip()
+    return perm in ("WRITE", "MAINTAIN", "ADMIN")
+
+
+# ── step 1: cards ────────────────────────────────────────────────────────────────────────────────
+
+SECTION = re.compile(r"^\s*(commanders?)\s*:?\s*(\(\d+\))?\s*$", re.I)
+
+
+def default_name(text: str, file: Path | None) -> str:
+    if file:
+        return slugify(file.stem)
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if SECTION.match(line):
+            for nxt in lines[i + 1:]:
+                if nxt.strip():
+                    card = re.sub(r"^\d+\s*x?\s+", "", nxt.strip())
+                    card = re.split(r"\s+[\(\[*]", card)[0]
+                    return slugify(card.split(",")[0]) + "-deck"
+    return "my-list"
+
+
+def missing_cards(path: Path) -> tuple[int, list[str]]:
+    import importlib.machinery
+    import importlib.util
+    sys.path.insert(0, str(SCRIPTS))
+    loader = importlib.machinery.SourceFileLoader("card_list_status", str(SCRIPTS / "card-list-status"))
+    status = importlib.util.module_from_spec(importlib.util.spec_from_loader("card_list_status", loader))
+    loader.exec_module(status)
+    names, missing = status.missing_cards(path.read_text(encoding="utf-8"))
+    return len(names), missing
+
+
+def columns(names: list[str], limit: int = 12) -> list[str]:
+    shown = names[:limit]
+    col = min(max(len(n) for n in shown) + 3, 38)
+    per_row = max(1, (width() - 6) // col)
+    rows = []
+    for i in range(0, len(shown), per_row):
+        rows.append("      " + "".join(clip(n, col - 3).ljust(col) for n in shown[i:i + per_row]).rstrip())
+    if len(names) > limit:
+        rows.append("      " + dim(f"…and {len(names) - limit} more"))
+    return rows
+
+
+def step_cards(lists_dir: Path) -> dict:
+    which = choose(1, "What should the agent build?", [
+        ("My deck or card list", "paste a decklist (Moxfield, Archidekt, MTGA…) or drop the file in"),
+        ("A whole set", "every card of a set that isn't implemented yet — e.g. AFR"),
+    ])
+    lists_dir.mkdir(parents=True, exist_ok=True)
+
+    if which == 0:
+        out(step_title(1, "Your deck or card list"))
+        while True:
+            finish = "empty line to finish" if TTY else "type END on its own line to finish"
+            out(dim(f"     Paste your list, drop the file here, or type card names ({finish})."))
+            text, rows = read_list()
+            file = as_file(text)
+            if file:
+                text = file.read_text(encoding="utf-8")
+            if TTY:
+                sys.stdout.write(f"\033[{rows + 1}A\033[J")
+            if text.strip():
+                break
+        name = slugify(ask("Name this list", default_name(text, file)))
+        if TTY:
+            sys.stdout.write("\033[2A\033[J")
+        path = lists_dir / f"{name}.txt"
+        path.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
+        with Spinner("Comparing against every implemented card"):
+            total, missing = missing_cards(path)
+        if total == 0:
+            fail("That didn't look like a card list — no card names found.")
+        answered(1, "Cards", f"{bold(name)}  {dim(f'{total - len(missing)}/{total} already work ·')} "
+                             f"{bold(str(len(missing)))} {dim('to build')}", 0)
+        return {"name": name, "path": path, "missing": missing}
+
+    out(step_title(1, "Which set?"))
+    rows = 1
+    while True:
+        raw = ask("Set code or name")
+        rows += 1
+        res = run([sys.executable, str(SCRIPTS / "resolve-set"), raw])
+        if res.returncode == 0:
+            code = res.stdout.strip()
+            break
+        if TTY:
+            sys.stdout.write(f"\033[{rows - 1}A\033[J")
+        rows = 1
+        if not res.stderr.startswith("resolve-set:"):
+            fail(f"Could not resolve the set: {res.stderr.strip() or 'resolver failed without details'}")
+        candidates = [l.strip() for l in res.stderr.splitlines()[1:] if l.strip()][:6]
+        if "several" in res.stderr and candidates:
+            out(f"     {yellow('!')} '{raw}' matches several sets — type the code:")
+            for line in candidates:
+                out(f"       {line}")
+            rows += 1 + len(candidates)
+        else:
+            out(f"     {yellow('!')} No set matches '{raw}'. Try its code (e.g. AFR) or part of its name —")
+            out(dim("       or, for a set the project doesn't track yet, paste its card list instead."))
+            rows += 2
+    if TTY:
+        sys.stdout.write(f"\033[{rows}A\033[J")
+    with Spinner(f"Reading {code.upper()}"):
+        res = run([sys.executable, str(SCRIPTS / "card-status"), "--set", code, "--list"], timeout=120)
+    if res.returncode != 0:
+        fail(f"Could not read {code.upper()}'s card status: {res.stderr.strip() or res.stdout.strip()}")
+    title = re.search(rf"^{code.upper()}\s+(.+?)\s{{2,}}\d{{4}}-", res.stdout, re.M | re.I)
+    missing = sorted({m.group(1).strip() for m in re.finditer(r"^\s+- (.+)$", res.stdout, re.M)})
+    name = f"set-{code}"
+    path = lists_dir / f"{name}.txt"
+    # The header holds the loop to the set itself: a card canonical elsewhere still needs its row here.
+    path.write_text(f"# set: {code.upper()}\n" + "".join(f"{n}\n" for n in missing), encoding="utf-8")
+    label = f"{code.upper()} · {title.group(1)}" if title else code.upper()
+    answered(1, "Cards", f"{bold(label)}  {bold(str(len(missing)))} {dim('to build')}", 0)
+    return {"name": name, "path": path, "missing": missing}
+
+
+# ── step 2: model ────────────────────────────────────────────────────────────────────────────────
+
+def step_model(have: dict[str, bool]) -> tuple[str, str]:
+    """Returns (card-loop model argument, display name)."""
+    options: list[tuple[str, str, str]] = []
+    if have["claude"]:
+        options += [("Claude Opus", "Claude Code · the most capable — recommended", "opus"),
+                    ("Claude Sonnet", "Claude Code · faster and cheaper", "sonnet")]
+    if have["codex"]:
+        options += [("GPT-6 Astra", "Codex · gpt-6-astra", "astra")]
+    options += [("Another model…", "type any Claude or Codex model ID", "")]
+    i = choose(2, "Which model should do the work?", [(a, b) for a, b, _ in options])
+    arg = options[i][2]
+    if arg:
+        answered(2, "Model", f"{options[i][0]} {dim('· ' + options[i][1].split(' · ')[0])}", 0)
+        return arg, options[i][0]
+
+    out(step_title(2, "Which model?"))
+    hint = "claude-… runs in Claude Code, anything else in Codex" if have["claude"] and have["codex"] else \
+        ("runs in Claude Code" if have["claude"] else "runs in Codex")
+    rows = 1
+    while True:
+        model = ask(f"Model ID {dim('· ' + hint)}").strip()
+        rows += 1
+        if not model:
+            continue
+        is_claude = model.lower().startswith("claude")
+        if is_claude and not have["claude"]:
+            out(f"     {yellow('!')} Claude Code isn't installed — pick a Codex model ID.")
+            rows += 1
+            continue
+        if not is_claude and not have["codex"]:
+            out(f"     {yellow('!')} Codex isn't installed — pick a claude-… model ID.")
+            rows += 1
+            continue
+        break
+    if TTY:
+        sys.stdout.write(f"\033[{rows}A\033[J")
+    agent = "Claude Code" if is_claude else "Codex"
+    answered(2, "Model", f"{model} {dim('· ' + agent)}", 0)
+    return (model if is_claude else f"codex:{model}"), model
+
+
+# ── step 3: delivery ─────────────────────────────────────────────────────────────────────────────
+
+def step_mode(can_push: bool) -> bool:
+    """True for local mode. Without push access there's nothing to choose."""
+    if not can_push:
+        answered(3, "Deliver", f"Commit on a local branch {dim('· you open the PR when you are happy')}", 0)
+        return True
+    options = [
+        ("Local branch", "commit each tested batch locally; you review and open the PR"),
+        ("Pull requests", "open a reviewed PR per batch and merge it once CI is green"),
+    ]
+    i = choose(3, "How should the work be delivered?", options)
+    answered(3, "Deliver", f"{options[i][0]} {dim('· ' + options[i][1])}", 0)
+    return i == 0
+
+
+# ── main ─────────────────────────────────────────────────────────────────────────────────────────
+
+def summary(target: dict, model_name: str, local: bool, branch: str, stop: str, watch: str) -> None:
+    rows = [("Cards", f"{len(target['missing'])} to build from {target['name']}"),
+            ("Model", model_name),
+            ("Branch" if local else "PRs", branch if local else "one per batch, merged when CI is green")]
+    out()
+    for key, value in rows:
+        out(f"     {dim(key.ljust(7))} {value}")
+    out()
+    out(dim("     How it works: the agent triages every card against its Oracle text, builds the ones the"))
+    out(dim("     engine can already express in batches, and builds any missing engine feature first."))
+    out(dim("     Each batch is tested and reviewed before it is committed."))
+    out()
+    out(f"     {dim('Stop after the current batch')}  {stop}")
+    out(f"     {dim('Watch from another terminal')}   {watch}")
+    if local:
+        out(f"     {dim('When it is done')}               git push -u origin {branch}  {dim('→ open one PR')}")
+    out()
+
+
+def main() -> int:
+    if any(a in ("-h", "--help") for a in sys.argv[1:]):
+        out(__doc__.strip())
+        return 0
+    common = run(["git", "-C", str(SCRIPTS), "rev-parse", "--path-format=absolute", "--git-common-dir"])
+    if common.returncode != 0:
+        fail("Run this inside an argentum-engine checkout.")
+    repo = Path(common.stdout.strip()).parent
+
+    header()
+    have = check_setup()
+    target = step_cards(repo / ".claude" / "loop-runs" / "lists")
+    if not target["missing"]:
+        out(f"\n  {green('★')} Every card there already works — nothing to build. Go play!\n")
+        return 0
+    for row in columns(target["missing"]):
+        out(dim(row) if row.lstrip().startswith("…") else row)
+    out()
+    model_arg, model_name = step_model(have)
+    local = step_mode(push_access(have))
+
+    loop = "cards-" + slugify(target["path"].stem)
+    branch = f"loop-{loop}-local"
+    summary(target, model_name, local, branch, f"touch .claude/loop-runs/{loop}.stop", f"just loop-watch {loop}")
+
+    try:
+        go = input(f"  {accent('❯')} {bold('Start building?')} {dim('(Y/n)')} ").strip().lower()
+    except EOFError:
+        go = "n"
+    flags = [model_arg] + (["--local"] if local else [])
+    if os.name == "nt":
+        # Let just invoke the Bash recipe; Windows cannot exec the script's shebang. The recipe pastes
+        # its arguments in unquoted, so pass the repo-relative path to keep spaces in the repo path out.
+        cmd = ["just", "card-loop", target["path"].relative_to(repo).as_posix()] + flags
+    else:
+        cmd = [str(SCRIPTS / "card-loop"), str(target["path"])] + flags
+    if go and not go.startswith("y"):
+        shown = " ".join(f"'{a}'" if " " in a else a for a in cmd).replace(str(SCRIPTS) + "/", "scripts/")
+        out(f"\n  No problem. To start later:\n     {accent(shown)}\n")
+        return 0
+    out()
+    os.chdir(repo)
+    if os.name == "nt":
+        return subprocess.call(cmd)
+    os.execv(cmd[0], cmd)
+
+
+if __name__ == "__main__":
+    try:
+        sys.exit(main())
+    except KeyboardInterrupt:
+        if TTY:
+            sys.stdout.write("\033[?2004l\033[?25h")
+        out(f"\n\n  {dim('Cancelled — nothing was started.')}\n")
+        sys.exit(130)

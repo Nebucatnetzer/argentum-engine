@@ -5865,7 +5865,11 @@
                     "destination": "Battlefield",
                     "placement": "Tapped",
                     "fromZone": "Graveyard",
-                    "addCounterType": "PLUS_ONE_PLUS_ONE"
+                    "entryCounters": [
+                        {
+                            "counterType": "PLUS_ONE_PLUS_ONE"
+                        }
+                    ]
                 },
                 "activateFromZone": "Graveyard"
             }
@@ -6447,7 +6451,11 @@
             },
             "destination": "Battlefield",
             "fromZone": "Graveyard",
-            "addCounterType": "PLUS_ONE_PLUS_ONE"
+            "entryCounters": [
+                {
+                    "counterType": "PLUS_ONE_PLUS_ONE"
+                }
+            ]
         },
         "targetRequirements": [
             {
@@ -8812,17 +8820,9 @@
                 "id": "Jiang Yanggu, Alone:1",
                 "trigger": {
                     "type": "AttackEvent",
-                    "filter": {
-                        "cardPredicates": [
-                            "IsCreature"
-                        ],
-                        "statePredicates": [
-                            "IsAttackingAnOpponent"
-                        ],
-                        "controllerPredicate": "ControlledByYou"
-                    },
+                    "filter": "creature ctrl:you",
                     "requires": [
-                        "AttacksAlone"
+                        "AttacksPlayerAlone"
                     ]
                 },
                 "binding": "ANY",
@@ -8980,7 +8980,7 @@
     "script": {
         "staticAbilities": [
             {
-                "type": "SuppressEntersTriggers",
+                "type": "SuppressZoneChangeTriggers",
                 "filter": "creature|artifact"
             }
         ]
@@ -12453,7 +12453,11 @@
                     "target": "Self",
                     "destination": "Battlefield",
                     "fromZone": "Graveyard",
-                    "addCounterType": "FINALITY"
+                    "entryCounters": [
+                        {
+                            "counterType": "FINALITY"
+                        }
+                    ]
                 },
                 "restrictions": [
                     {
@@ -20494,7 +20498,10 @@
                         },
                         {
                             "type": "PlayAdditionalLands",
-                            "count": 1
+                            "count": {
+                                "type": "Fixed",
+                                "amount": 1
+                            }
                         }
                     ]
                 }
@@ -21552,17 +21559,9 @@
                 "id": "Yuriko, Blade of the Mighty:1",
                 "trigger": {
                     "type": "AttackEvent",
-                    "filter": {
-                        "cardPredicates": [
-                            "IsCreature"
-                        ],
-                        "statePredicates": [
-                            "IsAttackingAnOpponent"
-                        ],
-                        "controllerPredicate": "ControlledByYou"
-                    },
+                    "filter": "creature ctrl:you",
                     "requires": [
-                        "AttacksAlone"
+                        "AttacksPlayerAlone"
                     ]
                 },
                 "binding": "ANY",
@@ -21596,7 +21595,7 @@
                     ],
                     "yoursOnly": false
                 },
-                "nonManaAbilitiesOnly": true,
+                "abilities": "NON_MANA",
                 "anyZone": true
             }
         ]

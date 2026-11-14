@@ -1,8 +1,10 @@
 package com.wingedsheep.engine.legalactions.utils
 
+import com.wingedsheep.engine.handlers.actions.ability.tapXExcludedSource
 import com.wingedsheep.engine.state.LifePaymentPurpose
 
 import com.wingedsheep.engine.mechanics.cost.PlayerCounterPayment
+import com.wingedsheep.engine.mechanics.cost.SacrificeCostLegality
 import com.wingedsheep.engine.handlers.PredicateContext
 import com.wingedsheep.engine.handlers.PredicateEvaluator
 import com.wingedsheep.engine.legalactions.*
@@ -52,7 +54,8 @@ class CostEnumerationUtils(
         return projected.getBattlefieldControlledBy(playerId).filter { entityId ->
             val container = state.getEntity(entityId) ?: return@filter false
             container.get<CardComponent>() ?: return@filter false
-            predicateEvaluator.matches(state, projected, entityId, cost.filter, predicateContext)
+            SacrificeCostLegality.canSacrificeForCost(state, entityId) &&
+                predicateEvaluator.matches(state, projected, entityId, cost.filter, predicateContext)
         }
     }
 
@@ -66,7 +69,8 @@ class CostEnumerationUtils(
         return projected.getBattlefieldControlledBy(playerId).filter { entityId ->
             val container = state.getEntity(entityId) ?: return@filter false
             container.get<CardComponent>() ?: return@filter false
-            predicateEvaluator.matches(state, projected, entityId, filter, predicateContext)
+            SacrificeCostLegality.canSacrificeForCost(state, entityId) &&
+                predicateEvaluator.matches(state, projected, entityId, filter, predicateContext)
         }
     }
 
@@ -92,6 +96,46 @@ class CostEnumerationUtils(
         filter: GameObjectFilter,
         excludeEntityId: EntityId? = null,
         sourceId: EntityId? = null
+    ): List<EntityId> = SacrificeCostLegality.sacrificeableForCost(
+        state, findAbilityPermanentCostTargets(state, playerId, filter, excludeEntityId, sourceId)
+    )
+
+    /**
+     * The pool a [CostAtom.VariablePermanents] cost picks from — the same source-relative pool as a
+     * sacrifice cost, narrowed by [SacrificeCostLegality] only when the cost sacrifices (an exile or
+     * tap variant may still take a creature no cost can sacrifice).
+     */
+    fun findVariablePermanentCostTargets(
+        state: GameState,
+        playerId: EntityId,
+        atom: CostAtom.VariablePermanents,
+        excludeEntityId: EntityId? = null,
+        sourceId: EntityId? = null
+    ): List<EntityId> {
+        val pool = findAbilityPermanentCostTargets(state, playerId, atom.filter, excludeEntityId, sourceId)
+        return if (atom.action == com.wingedsheep.sdk.scripting.costs.PermanentCostAction.SACRIFICE) {
+            SacrificeCostLegality.sacrificeableForCost(state, pool)
+        } else pool
+    }
+
+    /**
+     * Whether a "Sacrifice all [filter] you control" cost can be paid: controlling none sacrifices
+     * nothing (CR 118.3), but one that no cost may sacrifice makes the whole cost unpayable.
+     */
+    fun canPaySacrificeAll(
+        state: GameState,
+        playerId: EntityId,
+        atom: CostAtom.SacrificeAll,
+        sourceId: EntityId? = null
+    ): Boolean = findAbilityPermanentCostTargets(state, playerId, atom.filter, null, sourceId)
+        .all { SacrificeCostLegality.canSacrificeForCost(state, it) }
+
+    private fun findAbilityPermanentCostTargets(
+        state: GameState,
+        playerId: EntityId,
+        filter: GameObjectFilter,
+        excludeEntityId: EntityId?,
+        sourceId: EntityId?
     ): List<EntityId> {
         val predicateContext = PredicateContext(controllerId = playerId, sourceId = sourceId)
         val projected = state.projectedState
@@ -113,14 +157,18 @@ class CostEnumerationUtils(
      * is set — "tap another untapped …". Pass `if (atom.excludeSelf) sourceId else null` from every
      * enumeration site so the offered pool matches what payment validation will accept; a plain
      * "tap two untapped …" may tap the source itself, so null is correct there.
+     *
+     * [sourceId] goes into the [PredicateContext] so a source-relative filter resolves the way
+     * payment resolves it (payment always has the source in scope).
      */
     fun findAbilityTapTargets(
         state: GameState,
         playerId: EntityId,
         filter: GameObjectFilter,
-        excludeEntityId: EntityId? = null
+        excludeEntityId: EntityId? = null,
+        sourceId: EntityId? = null
     ): List<EntityId> {
-        val predicateContext = PredicateContext(controllerId = playerId)
+        val predicateContext = PredicateContext(controllerId = playerId, sourceId = sourceId)
         val projected = state.projectedState
         return projected.getBattlefieldControlledBy(playerId).filter { entityId ->
             if (entityId == excludeEntityId) return@filter false
@@ -181,6 +229,22 @@ class CostEnumerationUtils(
     }
 
     // --- Exile targets ---
+
+    /**
+     * The cards [atom] may be paid with, every one of its pool flags applied — the one call every
+     * consumer of a whole [CostAtom.ExileFrom] should make, so none of them silently narrows a
+     * widened pool (a processor cost's "a card an opponent owns from exile" lives in the
+     * opponents' exile, never the payer's).
+     */
+    fun findExileTargets(
+        state: GameState,
+        playerId: EntityId,
+        atom: CostAtom.ExileFrom,
+        excludeSelfId: EntityId? = null,
+    ): List<EntityId> = findExileTargets(
+        state, playerId, atom.filter, atom.zone, atom.anyPlayersZone, atom.singleZone, atom.count,
+        excludeSelfId = excludeSelfId,
+    )
 
     /**
      * The cards an exile cost may be paid with.
@@ -684,7 +748,12 @@ class CostEnumerationUtils(
          */
         sourceId: EntityId? = null,
         /** Whose cost this is — a cost-scoped life prohibition (Karn's Sylex) caps "pay X life" at 0. */
-        lifePurpose: LifePaymentPurpose = LifePaymentPurpose.ACTIVATE_ABILITY
+        lifePurpose: LifePaymentPurpose = LifePaymentPurpose.ACTIVATE_ABILITY,
+        /**
+         * The activator's loyalty-cost surcharge (Carth the Lion): a [−X] then removes only X − N
+         * counters, so X may go N past the source's loyalty.
+         */
+        loyaltySurcharge: Int = 0,
     ): Int {
         var maxX = if (manaCost != null && manaCost.hasX) {
             val availableSources = manaSolver.getAvailableManaCount(state, playerId, precomputedSources)
@@ -705,7 +774,7 @@ class CostEnumerationUtils(
         if (abilityCost == AbilityCost.LoyaltyX) {
             val loyalty = sourceId?.let { state.getEntity(it)?.get<CountersComponent>() }
                 ?.getCount(com.wingedsheep.sdk.core.CounterType.LOYALTY) ?: 0
-            maxX = minOf(maxX, loyalty)
+            maxX = minOf(maxX, loyalty + loyaltySurcharge)
         }
 
         // Cap by the graveyard cards an ExileXFromGraveyard cost could actually exile. The cap must
@@ -732,12 +801,22 @@ class CostEnumerationUtils(
         }
 
         // Cap by the hand cards a DiscardX cost could discard (honouring its filter), for the
-        // case where a `{X}` mana symbol makes this an X-picker ability.
-        val discardXCosts = when (abilityCost) {
+        // case where a `{X}` mana symbol makes this an X-picker ability. A measured discard
+        // ("discard a card with mana value X") bounds X by the cards' mana values instead: X can't
+        // exceed the highest mana value among the matching hand cards (Knollspine Invocation's
+        // `{X}` picker), and the selection pause offers only cards measuring exactly X.
+        val allDiscardXCosts = when (abilityCost) {
             is AbilityCost.Composite -> abilityCost.costs.filterIsInstance<AbilityCost.DiscardX>()
             is AbilityCost.DiscardX -> listOf(abilityCost)
             else -> emptyList()
         }
+        allDiscardXCosts.filter { it.count != null }.forEach { cost ->
+            val fitting = com.wingedsheep.engine.mechanics.cost.CostDefinedX.discardCandidates(
+                state, playerId, sourceId, cost, predicateEvaluator
+            )
+            maxX = minOf(maxX, fitting.maxOfOrNull { com.wingedsheep.engine.mechanics.ManaValues.of(state, it) } ?: 0)
+        }
+        val discardXCosts = allDiscardXCosts.filter { it.count == null }
         if (discardXCosts.isNotEmpty()) {
             val hand = state.getZone(ZoneKey(playerId, Zone.HAND)).filter { it != sourceId }
             val projected = state.projectedState
@@ -796,7 +875,13 @@ class CostEnumerationUtils(
             else -> null
         }
         if (tapXCost != null) {
-            maxX = minOf(maxX, findAbilityTapTargets(state, playerId, tapXCost.filter).size)
+            maxX = minOf(
+                maxX,
+                findAbilityTapTargets(
+                    state, playerId, tapXCost.filter,
+                    excludeEntityId = abilityCost.tapXExcludedSource(sourceId), sourceId = sourceId
+                ).size
+            )
         }
 
         // Cap by life total if PayXLife. Per CR 119.4 a player may pay an amount of life greater

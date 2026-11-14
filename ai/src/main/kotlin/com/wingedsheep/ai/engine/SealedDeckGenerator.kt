@@ -1,22 +1,16 @@
 package com.wingedsheep.ai.engine
 
-import com.wingedsheep.ai.assist.DeckBuildRequest
-import com.wingedsheep.ai.assist.DraftsimDeckBuildAdvisor
 import com.wingedsheep.ai.engine.deck.GeneratedDeck
 import com.wingedsheep.engine.limited.BoosterGenerator
 import com.wingedsheep.engine.limited.SideboardDerivation
 import com.wingedsheep.sdk.model.CardDefinition
-import org.slf4j.LoggerFactory
 
 /**
  * Generates a 40-card sealed deck by opening 8 boosters from a set and
  * selecting a playable build from the resulting pool.
  *
- * The build itself comes from the Draftsim autobuilder ([DraftsimDeckBuildAdvisor]) — the same
- * archetype-aware, ratings-driven engine the deckbuild "Auto-build" button uses — so quick/AI games
- * get the same quality of automatic build as a human clicking Auto-build, backed by Draftsim's
- * per-set ratings/removal/archetype tables. The [buildHeuristicSealedDeck] color-and-curve heuristic
- * remains as a safety net for the rare pool Draftsim can't build from.
+ * The build itself is [buildLimitedDeck] — the Draftsim autobuilder every AI seat builds limited
+ * decks with, the same engine as the deckbuild "Auto-build" button's default.
  *
  * Basic land names in the output are distributed across art variants
  * from the selected set.
@@ -49,7 +43,7 @@ class SealedDeckGenerator(
     /**
      * Generates a sealed deck from 8 boosters of a random available set.
      *
-     * @return A map of card name (or "Name#SetCode-CollectorNumber" for lands) to count
+     * @return A map of "Name#SetCode-CollectorNumber" printing identifiers (plain names for cards with no printing coordinates) to count
      */
     fun generate(): Map<String, Int> = generate(randomSetCode())
 
@@ -57,7 +51,7 @@ class SealedDeckGenerator(
      * Generates a sealed deck from 8 boosters of the specified set.
      *
      * @param setCode The set to generate boosters from
-     * @return A map of card name (or "Name#SetCode-CollectorNumber" for lands) to count
+     * @return A map of "Name#SetCode-CollectorNumber" printing identifiers (plain names for cards with no printing coordinates) to count
      */
     fun generate(setCode: String): Map<String, Int> = generateDeck(setCode).deckList
 
@@ -70,13 +64,9 @@ class SealedDeckGenerator(
         requireNotNull(boosterGenerator.availableSets[setCode]) { "Unknown set code: $setCode" }
 
         val pool = boosterGenerator.generateSealedPool(setCode, boosterCount = 8)
-        val deck = buildSealedDeck(pool, setCode)
+        val deck = buildLimitedDeck(pool, listOf(setCode))
 
-        // Pin the basics to the set's standard art, exactly as a human's submitted deck is.
-        return GeneratedDeck(
-            deckList = BoosterGenerator.withBasicLandArt(deck, boosterGenerator.getBasicLands(setCode)),
-            sideboard = SideboardDerivation.fromPool(pool, deck),
-        )
+        return pinnedToPool(deck, pool, boosterGenerator.getBasicLands(setCode))
     }
 
     /**
@@ -89,7 +79,7 @@ class SealedDeckGenerator(
      *
      * @param setCodes the sets to open boosters from; a single-element list behaves exactly like
      *        [generate].
-     * @return A map of card name (or "Name#SetCode-CollectorNumber" for lands) to count
+     * @return A map of "Name#SetCode-CollectorNumber" printing identifiers (plain names for cards with no printing coordinates) to count
      */
     fun generate(setCodes: List<String>): Map<String, Int> = generateDeck(setCodes).deckList
 
@@ -100,39 +90,30 @@ class SealedDeckGenerator(
         setCodes.forEach { requireNotNull(boosterGenerator.availableSets[it]) { "Unknown set code: $it" } }
 
         val pool = boosterGenerator.generateSealedPool(setCodes, boosterCount = 8)
-        val deck = buildSealedDeck(pool, setCodes.first())
+        val deck = buildLimitedDeck(pool, listOf(setCodes.first()))
 
-        return GeneratedDeck(
-            deckList = BoosterGenerator.withBasicLandArt(deck, boosterGenerator.getBasicLands(setCodes)),
-            sideboard = SideboardDerivation.fromPool(pool, deck),
-        )
+        return pinnedToPool(deck, pool, boosterGenerator.getBasicLands(setCodes))
     }
 
     /**
-     * Builds a sealed deck from [pool] with the Draftsim autobuilder, scoped to [setCode] so it loads
-     * that set's ratings/removal/archetype tables. Sets without a Draftsim ratings file still build
-     * (the scorer falls back to a rarity ladder). Falls back to [buildHeuristicSealedDeck] only if
-     * Draftsim throws or yields an empty list — the heuristic always produces a legal 40-card deck.
+     * Pins every card to the printing it was opened as, exactly as a human's sealed deck is
+     * (`FreeForAllHandler` / `TournamentMatchHandler`): the basics to the set's standard art, and
+     * each reprint to the pool's own printing. Without the reprint pin a bare name resolves to the
+     * canonical definition — an Onslaught Clone would be played with Alpha's art.
      */
-    private fun buildSealedDeck(pool: List<CardDefinition>, setCode: String): Map<String, Int> {
-        val result = runCatching {
-            DraftsimDeckBuildAdvisor.buildDeck(DeckBuildRequest(pool = pool, setCodes = listOf(setCode)))
-        }.getOrElse { error ->
-            logger.warn("Draftsim build failed for set '{}'; falling back to heuristic", setCode, error)
-            null
-        }
-        val build = result?.builds?.getOrNull(result.recommended)
-        if (build != null && build.deckList.isNotEmpty()) return build.deckList
-
-        if (result != null) {
-            logger.warn("Draftsim produced no build for set '{}'; falling back to heuristic", setCode)
-        }
-        return buildHeuristicSealedDeck(pool)
+    private fun pinnedToPool(
+        deck: Map<String, Int>,
+        pool: List<CardDefinition>,
+        basics: Map<String, CardDefinition>,
+    ): GeneratedDeck {
+        val printings = pool + basics.values
+        return GeneratedDeck(
+            deckList = BoosterGenerator.withCardArt(deck, printings),
+            sideboard = BoosterGenerator.withCardArt(SideboardDerivation.fromPool(pool, deck), printings),
+        )
     }
 
     private companion object {
-        private val logger = LoggerFactory.getLogger(SealedDeckGenerator::class.java)
-
         /**
          * Minimum distinct-card count for a set to be opened as a standalone sealed pool. Excludes
          * small supplementary sets (e.g. "The Big Score", BIG, ~30 cards) that can't fill 8 boosters

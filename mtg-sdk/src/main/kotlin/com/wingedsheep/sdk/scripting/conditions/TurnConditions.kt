@@ -138,6 +138,25 @@ data object IsFirstEndStepOfTurn : Condition {
     override val description: String = "if it's the first end step of the turn"
 }
 
+/**
+ * Condition: "If it's the first upkeep step of the turn."
+ *
+ * True while the game is in an upkeep step and no upkeep step has ended yet this turn — so an extra
+ * upkeep step added after this step ([com.wingedsheep.sdk.scripting.effects.AddAdditionalUpkeepStepsEffect]
+ * with `afterThisStep`) or after a later phase (Obeka) is not the first. The trigger qualifier for
+ * "at the beginning of [a player's] first upkeep each turn" (Paradox Haze, as an `interveningIf`),
+ * which keeps the extra upkeep step it adds from adding another. The upkeep analog of
+ * [IsFirstEndStepOfTurn].
+ *
+ * Board-derived (reads `state.step` and the active player's "an upkeep step ended this turn"
+ * marker), so it evaluates identically at resolution and under projection.
+ */
+@SerialName("IsFirstUpkeepStepOfTurn")
+@Serializable
+data object IsFirstUpkeepStepOfTurn : Condition {
+    override val description: String = "if it's the first upkeep step of the turn"
+}
+
 // =============================================================================
 // Combat Conditions
 // =============================================================================
@@ -214,9 +233,35 @@ data object YouWereAttackedThisStep : Condition {
 }
 
 /**
+ * Condition: one or more of the creatures a "whenever [player] attack(s) with …" trigger counted
+ * were declared attacking [player] — "they draw a card if none of those creatures attacked you"
+ * is `Not(TriggeringAttackersAttackedPlayer(Player.You))` (Firemane Commando).
+ *
+ * Only a player chosen directly as the defender counts (CR 508.1b): attacking a planeswalker that
+ * player controls or a battle they protect doesn't attack them (the card's ruling). Whom each
+ * attacker was declared attacking is frozen with the trigger as it fires, so removing an attacker
+ * from combat or the battlefield in response changes nothing (ruling: "once the ability triggers,
+ * it doesn't matter what happens to the attacking creatures"). Resolution-only: outside a
+ * `Triggers.<player>.attacks(…)` firing there are no such creatures and it is false.
+ *
+ * Closest neighbours: [SourceAttackedPlayerThisTurn] asks it of the source creature across the
+ * whole turn (a second combat would blur which declaration this trigger saw), and
+ * [YouWereAttackedThisStep] asks it of every attacker in the step, live.
+ */
+@SerialName("TriggeringAttackersAttackedPlayer")
+@Serializable
+data class TriggeringAttackersAttackedPlayer(
+    val player: Player = Player.You
+) : Condition {
+    override val description: String = "if any of those creatures attacked ${player.description}"
+}
+
+/**
  * Condition: "If [player] attacked with [atLeast] or more creatures matching [filter] this turn".
- * Counts every creature [player] declared as an attacker this turn whose current state
- * (per the projected state) matches the filter.
+ * Counts every creature [player] declared as an attacker this turn that matched the filter **as it
+ * was declared** (its projected characteristics at declaration, CR 508.1): a Rogue that attacked
+ * still counts after it dies, its token ceases to exist, or it stops being a Rogue, and a creature
+ * that became one only after attacking doesn't (Robber of the Rich, Deepway Navigator rulings).
  *
  * The `Conditions.YouAttackedWithCreaturesThisTurn(...)` DSL helper passes [Player.You],
  * which the engine resolves to the source's controller in both resolution and static-ability
@@ -551,24 +596,41 @@ data class PermanentTypeEnteredBattlefieldThisTurn(
 }
 
 /**
- * Condition: "If a permanent of [cardType] was put into [player]'s graveyard from the battlefield this turn."
+ * Condition: "If a permanent [of cardType] was put into [player]'s [toZone] from the battlefield this
+ * turn" — "if an enchantment was put into your graveyard from the battlefield this turn", "if a
+ * permanent was returned to your hand from the battlefield this turn".
  *
- * Turn history keyed on the card's owner — "your graveyard" is the owner's (CR 404.1) — and read
- * off the permanent's last-known type line as it left (last-known information), so an enchantment creature
- * counts as an enchantment and a token counts too: it is put into the graveyard before it ceases
- * to exist (CR 111.7). The card need not still be in the graveyard when the condition is checked.
+ * Turn history keyed on the card's owner — "your graveyard" and "your hand" are the owner's (a card only
+ * ever goes to its owner's graveyard or hand, CR 400.3) — and read off the permanent's last-known type line as it left (last-known information),
+ * so an enchantment creature counts as an enchantment and a token counts too: it reaches the zone
+ * before it ceases to exist (CR 111.7). The card need not still be in that zone when the condition is
+ * checked. [cardType] `null` means any permanent.
  *
- * Used for Kami of Transience (NEO): "At the beginning of each end step, if an enchantment was
- * put into your graveyard from the battlefield this turn, you may return this card ..."
+ * [toZone] is one of the owned destination zones the engine records — [Zone.GRAVEYARD] or [Zone.HAND].
+ * Closest neighbours: [PermanentLeftBattlefieldThisTurn] is keyed on the *controller* and ignores the
+ * destination; `CreatureDiedThisTurnMatching` is creature-only and graveyard-only.
+ *
+ * Used for Kami of Transience (NEO) and Miles O'Brien, Transporter Ops (TRK).
  */
-@SerialName("PermanentTypePutIntoGraveyardFromBattlefieldThisTurn")
+@SerialName("PermanentPutIntoZoneFromBattlefieldThisTurn")
 @Serializable
-data class PermanentTypePutIntoGraveyardFromBattlefieldThisTurn(
-    val cardType: CardType,
+data class PermanentPutIntoZoneFromBattlefieldThisTurn(
+    val toZone: Zone = Zone.GRAVEYARD,
+    val cardType: CardType? = null,
     val player: Player = Player.You
 ) : Condition {
-    override val description: String =
-        "if ${anA(cardType.displayName)} was put into ${player.possessive} graveyard from the battlefield this turn"
+    init {
+        require(toZone == Zone.GRAVEYARD || toZone == Zone.HAND) {
+            "PermanentPutIntoZoneFromBattlefieldThisTurn tracks GRAVEYARD and HAND only, not $toZone"
+        }
+    }
+
+    override val description: String
+        get() {
+            val what = cardType?.let { anA(it.displayName) } ?: "a permanent"
+            val verb = if (toZone == Zone.HAND) "returned to" else "put into"
+            return "if $what was $verb ${player.possessive} ${toZone.noun} from the battlefield this turn"
+        }
 
     private fun anA(word: String): String =
         if (word.firstOrNull()?.lowercaseChar() in setOf('a', 'e', 'i', 'o', 'u')) "an $word" else "a $word"
@@ -665,49 +727,51 @@ data object ControlledCreatureDiedThisTurnCondition : Condition {
 }
 
 /**
- * Condition: "if a creature with (or without) the subtype [subtype] died this turn".
+ * Condition: "if a [filter] creature died this turn" — the filtered sibling of
+ * [CreatureDiedThisTurnCondition], satisfied when **one** creature that died this turn matches
+ * [filter]. Each death is matched against the creature **as it last existed on the battlefield**
+ * (CR 603.10 / last-known information) — its projected name, type line, subtypes, colors, P/T,
+ * keywords, counters and token status — not its current graveyard state, so a Zombie that loses
+ * its types after death still counts as a Zombie death. A face-down creature died with no name
+ * (CR 708.2a): it matches no `named` test and passes every `notNamed` one. Predicates a
+ * last-known snapshot can't answer (a chosen name, a stored collection) never match.
  *
- * A filtered, subtype-scoped sibling of [CreatureDiedThisTurnCondition]. Global — satisfied by a
- * matching creature dying under any player's control. Evaluated against each dying creature's
- * **last-known subtypes** (the subtypes it had as it died, per CR 603.10 / last-known information),
- * not any creature's current state, so a Zombie that loses its types after death still counts as a
- * Zombie death.
+ * Negated filters read "some dead creature lacked it": a turn in which only Zombies died does not
+ * satisfy the non-Zombie form, while a Zombie and a Human both dying satisfies both the Zombie and
+ * the non-Zombie form.
  *
- *  - [present] = true  → "a [subtype] creature died this turn" (some dead creature *had* the subtype).
- *  - [present] = false → "a non-[subtype] creature died this turn" (some dead creature *lacked* it).
+ * Backed by the per-player [com.wingedsheep.engine.state.components.player.CreatureDeathsThisTurnComponent]
+ * (one last-known snapshot per death), cleared at end of turn. Facades:
+ * `Conditions.SubtypeCreatureDiedThisTurn` / `NonSubtypeCreatureDiedThisTurn` /
+ * `CreatureNotNamedDiedThisTurn`.
  *
- * Note the asymmetry that makes the [present] = false form correct for negated wording: it is true
- * iff *at least one* creature that died this turn did not have [subtype]. A turn in which only
- * Zombies died does not satisfy `present = false`, while a turn in which a Zombie and a Human both
- * died satisfies both forms.
- *
- * Backed by the per-player [com.wingedsheep.engine.state.components.player.CreatureSubtypesDiedThisTurnComponent]
- * (one entry per death, the dying creature's last-known subtype set), cleared at end of turn.
- *
- *  - Undead Sprinter (DSK): `CreatureWithSubtypeDiedThisTurn(Subtype.ZOMBIE.value, present = false)`
- *    gates its conditional cast-from-graveyard permission ("if a non-Zombie creature died this turn").
+ *  - Undead Sprinter (DSK): `Creature.notSubtype(ZOMBIE)` — "if a non-Zombie creature died this turn".
+ *  - Ebondeath, Dracolich (AFR): `Creature.notNamed("Ebondeath, Dracolich")`.
  *  - Cult Conscript (DMU): `player = Player.You` — "a non-Skeleton creature died under your control
  *    this turn". Each death is recorded under its last-known controller, so the scoped form reads
- *    only that player's records and a single death must satisfy both the subtype test and the
- *    controller scope (unlike `ControlledCreatureDiedThisTurn` AND a global subtype test, which two
+ *    only that player's records and a single death must satisfy both the filter and the
+ *    controller scope (unlike `ControlledCreatureDiedThisTurn` AND a global filtered test, which two
  *    different deaths could satisfy between them).
  *
- * @property subtype The creature subtype to test for, stored as its raw string (e.g. "Zombie").
- * @property present Whether a creature *with* the subtype (true) or *without* it (false) must have died.
+ * @property filter What the dead creature must have been.
  * @property player Whose deaths count — [Player.Each] (default, global) or a single player resolved
  *   relative to the source ([Player.You] = died under the source controller's control).
  */
-@SerialName("CreatureWithSubtypeDiedThisTurn")
+@SerialName("CreatureDiedThisTurnMatching")
 @Serializable
-data class CreatureWithSubtypeDiedThisTurn(
-    val subtype: String,
-    val present: Boolean = true,
+data class CreatureDiedThisTurnMatching(
+    val filter: GameObjectFilter,
     val player: Player = Player.Each
 ) : Condition {
     override val description: String = buildString {
-        append(if (present) "if a $subtype creature died" else "if a non-$subtype creature died")
+        append("if ${filter.indefiniteArticle} ${filter.description} died")
         if (player != Player.Each) append(" under ${player.possessive} control")
         append(" this turn")
+    }
+
+    override fun applyTextReplacement(replacer: TextReplacer): Condition {
+        val newFilter = filter.applyTextReplacement(replacer)
+        return if (newFilter !== filter) copy(filter = newFilter) else this
     }
 }
 
@@ -808,7 +872,7 @@ data object YouDiscardedThisCardThisTurn : Condition {
 @SerialName("PlayerHasCitysBlessing")
 @Serializable
 data class PlayerHasCitysBlessing(val player: Player = Player.You) : Condition {
-    override val description: String = "if ${player.description} has the city's blessing"
+    override val description: String = "if ${player.description} ${if (player.description.equals("you", ignoreCase = true)) "have" else "has"} the city's blessing"
 }
 
 // =============================================================================

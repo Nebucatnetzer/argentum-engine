@@ -551,6 +551,7 @@ export function cardIdForAction(info: LegalActionInfo): EntityId | undefined {
     case 'CycleCard':
     case 'TypecycleCard':
     case 'PlotCard':
+    case 'ForetellCard':
     case 'PutCompanionIntoHand':
     case 'SuspendCardFromHand':
       return a.cardId
@@ -643,6 +644,28 @@ export function useHasLegalActions(cardId: EntityId | null): boolean {
     if (!cardId) return false
     return getLegalActionsIndex(state.legalActions).highlightable.has(cardId)
   })
+}
+
+/**
+ * Cards outside the game (the viewer's sideboard) the server currently offers to play — "You may
+ * play a card you own from outside the game this turn" (Wish). Read off the legal actions'
+ * `sourceZone`, so the client never decides playability. Joined into a sorted string so Zustand's
+ * equality skips re-renders while the set is unchanged; split it with {@link splitOutsidePlayable}.
+ */
+export function useOutsidePlayableKey(): string {
+  return useGameStore((state) => {
+    const ids: string[] = []
+    for (const info of state.legalActions) {
+      if (info.sourceZone !== 'SIDEBOARD' || info.isAffordable === false) continue
+      const a = info.action
+      if (a.type === 'CastSpell' || a.type === 'PlayLand') ids.push(a.cardId)
+    }
+    return ids.length === 0 ? '' : [...new Set(ids)].sort().join(',')
+  })
+}
+
+export function splitOutsidePlayable(key: string): ReadonlySet<EntityId> {
+  return new Set(key === '' ? [] : (key.split(',') as EntityId[]))
 }
 
 export interface BattlefieldAttachments {
@@ -1054,6 +1077,21 @@ export function useGhostCards(playerId: EntityId | null): readonly ClientCard[] 
       ghostCardIds.add(topCardId)
     }
 
+    // 2b. The top card of *another* player's library you may play (Xanathar, Guild Kingpin's "you
+    // may play the top card of their library") — the server only offers a library action on it when
+    // a permission reaches that library.
+    for (const zone of gameState.zones) {
+      if (zone.zoneId.zoneType !== ZoneType.LIBRARY || zoneIdEquals(zone.zoneId, libZoneId)) continue
+      const otherTopId = librarySlots(zone)[0]
+      if (!otherTopId) continue
+      const playable = legalActions.some((actionInfo) => {
+        const action = actionInfo.action
+        return actionInfo.sourceZone === 'LIBRARY' && actionInfo.isAffordable !== false &&
+          (action.type === 'CastSpell' || action.type === 'PlayLand') && action.cardId === otherTopId
+      })
+      if (playable) ghostCardIds.add(otherTopId)
+    }
+
     // 3. Exile cards playable via Mind's Desire-like effects
     // Check ALL exile zones because cards like Kheru Spellsnatcher exile opponent's spells
     // (cards stay in their owner's exile zone but are playable by the Spellsnatcher's controller)
@@ -1065,6 +1103,15 @@ export function useGhostCards(playerId: EntityId | null): readonly ClientCard[] 
           ghostCardIds.add(cardId)
         }
       }
+    }
+
+    // 3b. Exiled cards with an ability the server offers from exile (Q, Stacking the Deck's
+    // "Activate only if this card is exiled") — the exile twin of the graveyard abilities in 1.
+    for (const actionInfo of legalActions) {
+      const action = actionInfo.action
+      if (action.type !== 'ActivateAbility' || actionInfo.sourceZone !== 'EXILE') continue
+      if (actionInfo.isAffordable === false) continue
+      if (gameState.cards[action.sourceId]) ghostCardIds.add(action.sourceId)
     }
 
     // Return deduplicated ClientCard objects, each shown as the face it would be cast as

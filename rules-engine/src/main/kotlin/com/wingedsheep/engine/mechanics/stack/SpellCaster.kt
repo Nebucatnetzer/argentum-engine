@@ -82,7 +82,7 @@ internal class SpellCaster(
         additionalCostChoices: Map<ChoiceSlot, Int> = emptyMap(),
         wasBlightPaid: Boolean = false,
         wasWaterbendPaid: Boolean = false,
-        additionalEntryCounters: com.wingedsheep.engine.state.components.stack.AdditionalEntryCounters? = null,
+        additionalEntryCounters: List<com.wingedsheep.engine.state.components.stack.AdditionalEntryCounters> = emptyList(),
         giftRecipient: EntityId? = null,
         wasWarped: Boolean = false,
         wasDashed: Boolean = false,
@@ -109,6 +109,7 @@ internal class SpellCaster(
         revealedAsCostSnapshots: List<EntitySnapshot> = emptyList(),
         exiledAsCostCards: List<EntityId> = emptyList(),
         exiledAsCostSnapshots: List<EntitySnapshot> = emptyList(),
+        tappedPermanents: List<EntityId> = emptyList(),
         chosenEntitySnapshots: List<EntitySnapshot> = emptyList(),
         manaSpentWhite: Int = 0,
         manaSpentBlue: Int = 0,
@@ -257,6 +258,7 @@ internal class SpellCaster(
             revealedAsCostSnapshots = revealedAsCostSnapshots,
             exiledAsCostCards = exiledAsCostCards,
             exiledAsCostSnapshots = exiledAsCostSnapshots,
+            tappedPermanents = tappedPermanents,
             chosenEntitySnapshots = chosenEntitySnapshots,
             manaSpentWhite = manaSpentWhite,
             manaSpentBlue = manaSpentBlue,
@@ -267,6 +269,7 @@ internal class SpellCaster(
             manaSpentBySubtype = spentManaProvenance.bySubtype,
             manaSpentByCardType = spentManaProvenance.byCardType,
             manaSpentSnow = spentManaProvenance.snow,
+            manaSpentSnowColors = spentManaProvenance.snowColors,
             manaSpentOnXByColor = manaSpentOnXByColor,
             phyrexianLifePips = phyrexianLifePips,
             faceIndex = faceIndex,
@@ -310,6 +313,9 @@ internal class SpellCaster(
         val objectOnStack = newState.objectRef(cardId)
 
         newState = consumeCastPermissions(newState, cardId, casterId, castFaceDown)
+        // The spell is a new object (CR 400.7): it is no longer the card its owner discarded this turn
+        // (Mayhem's gate, Shadow of the Grave's filter), wherever it resolves to.
+        newState = com.wingedsheep.engine.handlers.effects.ZoneTransitionService.untrackDiscardedCard(newState, cardId)
         if (castFromZone == Zone.EXILE && objectBeforeCast != null) {
             newState = endGrantsUntilCastFromExile(newState, objectBeforeCast)
         }
@@ -366,6 +372,13 @@ internal class SpellCaster(
                 sacrificedAsCostNames = sacrificedPermanents.mapNotNull { it.name }
             )
         )
+
+        // Choosing the modes of a (true) modal spell is facing a dilemma; gift-style ModalEffects
+        // report zero modes here and don't.
+        val (afterDilemma, dilemmaEvents) =
+            com.wingedsheep.engine.mechanics.modal.Dilemmas.face(newState, casterId, spellName, reportedChosenModesCount)
+        newState = afterDilemma
+        events.addAll(1, dilemmaEvents)
 
         newState = announceTargets(newState, cardId, casterId, spellName, effectiveTargets, events)
         addPermissionRiderEvents(state, castFromZone, cardId, casterId, events)
@@ -507,6 +520,7 @@ internal class SpellCaster(
                 updated = updated.without<PlayWithoutPayingCostComponent>()
             }
             updated = updated.without<com.wingedsheep.engine.state.components.identity.PlayWithCostIncreaseComponent>()
+            updated = updated.without<com.wingedsheep.engine.state.components.identity.PlayWithCostReductionComponent>()
             updated = updated.without<com.wingedsheep.engine.state.components.identity.PlayWithFixedAlternativeManaCostComponent>()
             // A runtime substitute/additional cost (Cruelclaw's discard, Amped Raptor's energy) was
             // owed by this cast and has been paid; it must not be owed again by a later one.
@@ -686,7 +700,7 @@ internal class SpellCaster(
         cardId: EntityId,
         playerId: EntityId
     ): Zone? {
-        val zones = listOf(Zone.HAND, Zone.GRAVEYARD, Zone.LIBRARY, Zone.COMMAND)
+        val zones = listOf(Zone.HAND, Zone.GRAVEYARD, Zone.LIBRARY, Zone.COMMAND, Zone.SIDEBOARD)
         for (zone in zones) {
             if (cardId in state.getZone(ZoneKey(playerId, zone))) {
                 return zone
@@ -768,11 +782,16 @@ internal class SpellCaster(
                 // so a leftover marker would be inert, but this keeps the permanent clean.
                 // The "which zone was this exiled from" stamp is only meaningful while the object
                 // is in exile; this path reuses the entity id, so leaving it on would put an
-                // ExiledFromZoneComponent on the resulting permanent.
+                // ExiledFromZoneComponent on the resulting permanent. Likewise counters placed on it
+                // in exile (silver, study, a last time counter) aren't retained by the spell.
                 val removed = state.removeFromZone(exileZone, cardId)
                     .updateEntity(cardId) {
                         it.without<com.wingedsheep.engine.state.components.battlefield.SuspendedComponent>()
                             .without<com.wingedsheep.engine.state.components.identity.ExiledFromZoneComponent>()
+                            .without<com.wingedsheep.engine.state.components.battlefield.CountersComponent>()
+                            // Foretold-ness was read at cast (ChoiceSlot.FORETOLD); the card is a
+                            // new object once it leaves exile (CR 400.7).
+                            .without<com.wingedsheep.engine.state.components.identity.ForetoldComponent>()
                     }
                 return com.wingedsheep.engine.handlers.effects.ZoneMovementUtils
                     .unlinkFromAllLinkedExiles(removed, cardId)
@@ -789,6 +808,12 @@ internal class SpellCaster(
         val commandZone = ownerOf(Zone.COMMAND)
         if (commandZone != null) {
             return state.removeFromZone(commandZone, cardId)
+        }
+
+        // A card cast from outside the game (Wish) leaves its owner's sideboard.
+        val sideboardZone = ownerOf(Zone.SIDEBOARD)
+        if (sideboardZone != null) {
+            return state.removeFromZone(sideboardZone, cardId)
         }
 
         return state

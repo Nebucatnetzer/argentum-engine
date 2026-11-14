@@ -201,6 +201,19 @@ data class CreateTokenEffect(
      * Requires [attacking].
      */
     val attackedPlayer: EffectTarget? = null,
+    /**
+     * Pipeline collections whose cards lend the token **all of their triggered abilities** — "create
+     * Vecna, a legendary 8/8 … token with indestructible and all triggered abilities of the exiled
+     * cards" (The Book of Vile Darkness). Read once, as the token is created: each card's printed
+     * triggered abilities become part of the token's copiable values (the Book's ruling), so a gained
+     * "when this enters" ability triggers on the token's own entry and a copy of the token keeps them.
+     * Face-down cards lend nothing (they have no abilities, CR 708.2). Only the triggered abilities a
+     * card's definition declares are read — keyword-derived triggers (prowess, exalted, bushido …) are
+     * not, since none of the motivating cards has one. The sibling of
+     * [triggeredAbilities] for abilities named by the cards a resolution gathered rather than printed
+     * on the token-maker.
+     */
+    val triggeredAbilitiesOf: List<String> = emptyList(),
 ) : Effect {
     init {
         require(attackDefender != EnteringAttackDefender.RETURNED_ATTACKER) { "RETURNED_ATTACKER is for MoveToZoneEffect only" }
@@ -235,14 +248,16 @@ data class CreateTokenEffect(
         // intentionally not rendered here to keep existing artifact-token descriptions stable.)
         val cardTypeWord = if (enchantmentToken) "enchantment creature" else "creature"
         append("Create ")
+        // "Create a tapped 2/2 black Zombie creature token" (Drana's Chosen, Null Caller).
+        val tappedWord = if (tapped) "tapped " else ""
         when (val c = count) {
             is DynamicAmount.Fixed -> {
                 append(if (c.amount == 1) "a" else "${c.amount}")
-                append(" $pt $colorWord $typeWord $cardTypeWord token")
+                append(" $tappedWord$pt $colorWord $typeWord $cardTypeWord token")
                 if (c.amount != 1) append("s")
             }
             else -> {
-                append("${c.description} $pt $colorWord $typeWord $cardTypeWord tokens")
+                append("${c.description} $tappedWord$pt $colorWord $typeWord $cardTypeWord tokens")
             }
         }
         val keywordWords = keywords.map { it.name.lowercase() } +
@@ -689,6 +704,13 @@ data class CreateTokenCopyOfTargetEffect(
      * enchantment leaves the battlefield, exile the token" has to find the one token it made.
      */
     val stampCreator: Boolean = false,
+    /**
+     * The created tokens are **embalmed** — "a token is 'embalmed' if it's created by a resolving
+     * embalm ability" (CR 702.128b). Set only by [com.wingedsheep.sdk.dsl.embalmAbility]; read
+     * through [com.wingedsheep.sdk.scripting.predicates.StatePredicate.IsEmbalmed]
+     * (`Conditions.SourceWasEmbalmed` — Vizier of Many Faces). Provenance, not a copy exception.
+     */
+    val embalmed: Boolean = false,
     /**
      * The object each token copy enters the battlefield **attached to** — "create a token that's a
      * copy of that Aura attached to that creature" (Arna Kennerüd, Skycaptain). Null (the default)

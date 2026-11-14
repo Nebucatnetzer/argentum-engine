@@ -67,6 +67,9 @@ data class AnimateLandEffect(
  * @property creatureTypes Creature subtypes to *set*, replacing all existing subtypes (e.g.,
  *   "Dragon"; "Fractal" loses all other creature types — Layer 4 set effect)
  * @property removeTypes Types to remove (e.g., "PLANESWALKER")
+ * @property removeSubtypes Subtypes to remove, keeping every other subtype — "it isn't an
+ *   Equipment" when an Equipment animates itself (Dancing Sword). Card types go in [removeTypes];
+ *   replacing *all* creature subtypes is [creatureTypes].
  * @property colors Colors to set, replacing all existing colors (null = keep existing). An explicit
  *   set loses all other colors (e.g. green+blue for a Fractal).
  * @property imageUri Optional *display-only* card-image override shown for the animated permanent
@@ -105,7 +108,8 @@ data class BecomeCreatureEffect(
      */
     val dynamicPower: DynamicAmount? = null,
     /** Optional dynamic base toughness — see [dynamicPower]. */
-    val dynamicToughness: DynamicAmount? = null
+    val dynamicToughness: DynamicAmount? = null,
+    val removeSubtypes: Set<String> = emptySet()
 ) : Effect {
     override val description: String = buildString {
         val ptText = if (dynamicPower != null && dynamicToughness != null) "*/*"
@@ -594,9 +598,10 @@ data class UnattachEquipmentEffect(
  * control"). Models "Return target Aura or Equipment card from your graveyard to the
  * battlefield attached to a creature you control" (One Last Job, Brass Squire-shaped attaches).
  *
- * Unlike the [com.wingedsheep.sdk.scripting.effects.MoveCollectionEffect] aura auto-attach
- * (Rule 303.4f), which is Aura-only and uses the Aura's own enchant target, this effect
- * works for both Auras and Equipment and lets the card restrict the host. Per the One Last
+ * Unlike the [com.wingedsheep.sdk.scripting.effects.MoveCollectionEffect] aura host choice
+ * (Rule 303.4f), which moves a whole pipeline collection at once and is Aura-only (its
+ * `auraHostFilter` narrows each Aura's host — Storm Herald), this effect moves one targeted
+ * card and works for both Auras and Equipment. Per the One Last
  * Job ruling, the Aura/Equipment must be legally attachable to the chosen host:
  *  - If a legal host exists, the controller chooses one and the card enters attached to it.
  *  - If no legal host exists, an Equipment enters the battlefield unattached, while an Aura

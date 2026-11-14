@@ -154,8 +154,8 @@ object Recursion {
      * +1/+1 counters on it".
      *
      * The corpus spells this as a `Composite` of the move and an `AddCounters` aimed at the source,
-     * not as [MoveToZoneEffect.addCounterType]: eight cards write the composite, none writes the
-     * field, and the field holds one counter where the sentence can print several. So the field is a
+     * not as [MoveToZoneEffect.entryCounters]: eight cards write the composite, none writes the
+     * field for this sentence. So the field is a
      * second SDK spelling this rule deliberately does not emit — see the note on [functionsIn] for
      * the same judgement made the other way.
      *
@@ -318,6 +318,7 @@ object Recursion {
     private fun costPutsSourceInto(cost: AbilityCost): Zone? = when (cost) {
         is AbilityCost.SacrificeSelf -> Zone.GRAVEYARD
         is AbilityCost.ExileSelf -> Zone.EXILE
+        is AbilityCost.PutSelfIntoLibrary -> Zone.LIBRARY
         is AbilityCost.Composite -> cost.costs.firstNotNullOfOrNull(::costPutsSourceInto)
         else -> null
     }

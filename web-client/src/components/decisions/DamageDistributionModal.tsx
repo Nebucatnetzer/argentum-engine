@@ -14,6 +14,8 @@ interface TargetCardInfo {
   basePower: number | null | undefined
   baseToughness: number | null | undefined
   damage: number | null | undefined
+  /** Set when the target is a player ("any target" divisions) — shown as a name-and-life tile. */
+  lifeTotal?: number
 }
 
 /**
@@ -69,6 +71,8 @@ export function DamageDistributionModal() {
   }
 
   const { cardName, targetIds, totalDamage, minPerTarget, distribution } = damageDistributionState
+  // An activated ability (Chandra, Flameshaper's −4; Huatli, Warrior Poet's −X) is activated, not cast.
+  const confirmLabel = damageDistributionState.action.type === 'ActivateAbility' ? 'Activate' : 'Cast Spell'
 
   // Calculate remaining amount to distribute
   const totalAllocated = Object.values(distribution).reduce((sum, val) => sum + val, 0)
@@ -77,6 +81,20 @@ export function DamageDistributionModal() {
 
   // Get card info for each target
   const targetCards: TargetCardInfo[] = targetIds.map((targetId): TargetCardInfo => {
+    const player = gameState?.players.find((p) => p.playerId === targetId)
+    if (player) {
+      return {
+        id: targetId,
+        name: player.name,
+        imageUri: null,
+        power: null,
+        toughness: null,
+        basePower: null,
+        baseToughness: null,
+        damage: null,
+        lifeTotal: player.life,
+      }
+    }
     const card = gameState?.cards[targetId]
     return {
       id: targetId,
@@ -213,7 +231,7 @@ export function DamageDistributionModal() {
             >
               {/* Card image */}
               <div
-                onMouseEnter={(e) => handleMouseEnter(card.id, e)}
+                onMouseEnter={(e) => { if (card.lifeTotal == null) handleMouseEnter(card.id, e) }}
                 onMouseLeave={handleMouseLeave}
                 style={{
                   width: cardWidth,
@@ -227,14 +245,37 @@ export function DamageDistributionModal() {
                   position: 'relative',
                 }}
               >
-                <img
-                  src={cardImageUrl}
-                  alt={card.name}
-                  style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                  onError={(e) => {
-                    e.currentTarget.style.display = 'none'
-                  }}
-                />
+                {card.lifeTotal != null ? (
+                  <div
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      backgroundColor: '#1a1a2e',
+                      display: 'flex',
+                      flexDirection: 'column',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      gap: 8,
+                    }}
+                  >
+                    <span style={{ color: '#888', fontSize: 32 }}>&#9823;</span>
+                    <span style={{ color: 'white', fontSize: responsive.fontSize.normal, fontWeight: 500 }}>
+                      {card.name}
+                    </span>
+                    <span style={{ color: '#888', fontSize: responsive.fontSize.small }}>
+                      Life: {card.lifeTotal}
+                    </span>
+                  </div>
+                ) : (
+                  <img
+                    src={cardImageUrl}
+                    alt={card.name}
+                    style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                    onError={(e) => {
+                      e.currentTarget.style.display = 'none'
+                    }}
+                  />
+                )}
 
                 {/* Damage badge */}
                 {allocated > 0 && (
@@ -459,7 +500,7 @@ export function DamageDistributionModal() {
             transition: 'all 0.15s',
           }}
         >
-          Cast Spell
+          {confirmLabel}
         </button>
       </div>
     </div>

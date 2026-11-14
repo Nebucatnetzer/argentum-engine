@@ -1,24 +1,27 @@
-import React, { useState, useEffect, useLayoutEffect, useRef } from 'react'
+import React, { lazy, Suspense, useState, useEffect, useLayoutEffect, useRef } from 'react'
 import { createPortal } from 'react-dom'
 import { useGameStore } from '@/store/gameStore.ts'
-import { useZoneCards, useStackCards, useZone, useCard, selectGameState, librarySlots } from '@/store/selectors.ts'
+import { useZoneCards, useStackCards, useZone, useCard, selectGameState, librarySlots, useOutsidePlayableKey, splitOutsidePlayable } from '@/store/selectors.ts'
 import { graveyard, exile, library, sideboard, CounterType, CounterTypeDisplayNames } from '@/types'
 import type { ClientCard, ClientDeckCard, ClientPlayer } from '@/types'
 import { CARD_BACK_IMAGE_URL } from '@/utils/cardImages.ts'
 import { getCardImageUrl } from '@/utils/cardImages.ts'
 import { useResponsiveContext, handleImageError, getStashCounters, getTimeCounters, getCounterCount } from './shared'
-import { DeckBrowser } from './DeckBrowser'
 import { counterManaClass } from '@/assets/icons/keywords'
 import { styles, passiveCounterBadgeStyle } from './styles'
 import { collectGraveyardTargets, type GraveyardTarget } from './graveyardTargets'
 import { GraveyardTargetCallout } from './GraveyardTargetCallout'
+
+// Opened only by clicking a Deck pile, and it brings the deck-view components with it, so it loads
+// on demand rather than riding in the game board chunk.
+const DeckBrowser = lazy(() => import('./DeckBrowser').then(({ DeckBrowser }) => ({ default: DeckBrowser })))
 
 /** Stable empty array so the `ownDeck` selector doesn't hand Zustand a new reference each render. */
 const EMPTY_DECK: readonly ClientDeckCard[] = []
 
 const CARD_RATIO = 1.4
 /** Counters that only mark a card in exile for some effect, badged in the exile browser. */
-const EXILE_MARKER_COUNTERS = [CounterType.BRAIN, CounterType.HATCHING] as const
+const EXILE_MARKER_COUNTERS = [CounterType.BRAIN, CounterType.HATCHING, CounterType.STUDY, CounterType.HIT, CounterType.REFINE, CounterType.VOYAGE] as const
 const LABEL_HEIGHT = 14
 // Deck + Graveyard + Exile are always present; extra "Plotted", "Paradigm", and "Suspended"
 // piles appear only when the player has those cards in exile (see `pileCount` below).
@@ -95,6 +98,11 @@ export function ZonePile({
   // for. The server only sends a sideboard's contents to its owner, so this is empty on every
   // other seat's pile.
   const outsideCards = useZoneCards(sideboard(player.playerId))
+  // Sideboard cards the server lets this viewer play right now (Wish). Always empty on an
+  // opponent's pile: their sideboard isn't sent, and its cards are never in our legal actions.
+  const outsidePlayableKey = useOutsidePlayableKey()
+  const outsidePlayable = React.useMemo(() => splitOutsidePlayable(outsidePlayableKey), [outsidePlayableKey])
+  const outsidePlayableCount = outsideCards.filter((c) => outsidePlayable.has(c.id)).length
   const hoverCard = useGameStore((state) => state.hoverCard)
   const responsive = useResponsiveContext()
   const [browsingGraveyard, setBrowsingGraveyard] = useState(false)
@@ -202,7 +210,9 @@ export function ZonePile({
     : { alignSelf: 'flex-end' as const, marginBottom: responsive.sectionGap * 2 }
 
   // The deck list is worth opening even on an empty library (you can still read what you played).
-  const isOwnDeck = ownDeck.length > 0
+  // A sideboard is only ever sent to its owner, so one also marks this pile as the viewer's — and
+  // keeps it openable when a Wish has a card to offer from it even with no library or deck list.
+  const isOwnDeck = ownDeck.length > 0 || outsideCards.length > 0
   const canBrowseDeck = player.librarySize > 0 || isOwnDeck
   const showsTopLibraryCard = player.librarySize > 0 && topLibraryCard !== null
 
@@ -229,12 +239,15 @@ export function ZonePile({
         <div
           data-zone={isOpponent ? 'opponent-library' : 'player-library'}
           data-zone-owner={player.playerId}
-          title={deckPileTitle(canBrowseDeck, isOwnDeck, showsTopLibraryCard ? topLibraryCard : null, outsideCards.length)}
+          title={outsidePlayableCount > 0
+            ? `You may play cards from outside the game — open to choose (D)`
+            : deckPileTitle(canBrowseDeck, isOwnDeck, showsTopLibraryCard ? topLibraryCard : null, outsideCards.length)}
           style={{
             ...styles.deckPile,
             ...pileStyle,
             cursor: canBrowseDeck ? 'pointer' : 'default',
             ...(showsTopLibraryCard ? styles.deckPileTopRevealed : null),
+            ...(outsidePlayableCount > 0 ? styles.deckPileOutsidePlayable : null),
           }}
           onClick={() => { if (canBrowseDeck) setBrowsingLibrary(true) }}
           onMouseEnter={(e) => { if (showsTopLibraryCard) hoverCard(topLibraryCard.id, { x: e.clientX, y: e.clientY }) }}
@@ -261,6 +274,7 @@ export function ZonePile({
           {/* Badge the face-up top card so it doesn't read as "the whole deck is public" — the
               rest of the library is still a card back's worth of unknown. */}
           {showsTopLibraryCard && <div style={styles.deckTopRevealedBadge}>👁</div>}
+          {outsidePlayableCount > 0 && <div style={styles.deckOutsidePlayableBadge}>Play</div>}
           <div style={{ ...styles.pileCount, fontSize: responsive.fontSize.small }}>{player.librarySize}</div>
         </div>
         {showLabels && <span style={zoneLabelStyle}>Deck</span>}
@@ -498,13 +512,16 @@ export function ZonePile({
         document.body,
       )}
       {browsingLibrary && createPortal(
-        <DeckBrowser
-          ownerLabel={isOpponent ? `${player.name}'s` : 'Your'}
-          slots={librarySlotIds}
-          deck={ownDeck}
-          outsideCards={outsideCards}
-          onClose={() => setBrowsingLibrary(false)}
-        />,
+        <Suspense fallback={null}>
+          <DeckBrowser
+            ownerLabel={isOpponent ? `${player.name}'s` : 'Your'}
+            slots={librarySlotIds}
+            deck={ownDeck}
+            outsideCards={outsideCards}
+            outsidePlayable={outsidePlayable}
+            onClose={() => setBrowsingLibrary(false)}
+          />
+        </Suspense>,
         document.body,
       )}
     </div>
@@ -749,7 +766,7 @@ function ExileBrowser({ cards, ownerLabel, onClose }: { cards: readonly ClientCa
                 </div>
               )}
               {/* Exile-marker counters (brain: Rex, Cyber-Hound's ability donors; hatching: the
-                  cards Dragon-Kami's Egg can cast) say which exiled cards count, so the exile browser
+                  cards Dragon-Kami's Egg can cast; study: the cards Kianne // Imbraham read; hit: Etrata's marks) say which exiled cards count, so the exile browser
                   is where a player checks them. Bottom-left, clear of the plotted and stash badges. */}
               {EXILE_MARKER_COUNTERS.filter((type) => getCounterCount(card, type) > 0).map((type) => (
                 <div

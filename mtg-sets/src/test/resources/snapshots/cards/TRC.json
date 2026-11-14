@@ -110,6 +110,30 @@
     ]
 }
 
+// Exocomp
+{
+    "name": "Exocomp",
+    "manaCost": "{2}{U}",
+    "typeLine": "Artifact Creature — Construct",
+    "oracleText": "Flying (This creature can't be blocked except by creatures with flying or reach.)",
+    "creatureStats": {
+        "power": 3,
+        "toughness": 1
+    },
+    "keywords": [
+        "FLYING"
+    ],
+    "metadata": {
+        "collectorNumber": "145",
+        "artist": "Pierre Raveneau",
+        "flavorText": "Their ability to replicate new circuits as they learn inadvertently bootstrapped exocomps into sentience in the 2360s.",
+        "imageUri": "https://cards.scryfall.io/normal/front/4/6/46012ec9-9605-44fe-84a9-6aab0738737f.jpg?1785981040"
+    },
+    "colorIdentityOverride": [
+        "BLUE"
+    ]
+}
+
 // Gorn Captain
 {
     "name": "Gorn Captain",
@@ -210,6 +234,143 @@
     ]
 }
 
+// Klingon Strike Force
+{
+    "name": "Klingon Strike Force",
+    "manaCost": "{3}{R}{R}",
+    "typeLine": "Creature — Klingon Warrior",
+    "oracleText": "Trample (This creature can deal excess combat damage to the player it's attacking.)\nHaste (This creature can attack and {T} as soon as it comes under your control.)\nWhen this creature dies, it deals 2 damage to each opponent.",
+    "creatureStats": {
+        "power": 5,
+        "toughness": 5
+    },
+    "keywords": [
+        "TRAMPLE",
+        "HASTE"
+    ],
+    "script": {
+        "triggeredAbilities": [
+            {
+                "id": "Klingon Strike Force:1",
+                "trigger": {
+                    "type": "ZoneChangeEvent",
+                    "from": "Battlefield",
+                    "to": "Graveyard"
+                },
+                "effect": {
+                    "type": "DealDamage",
+                    "amount": {
+                        "type": "Fixed",
+                        "amount": 2
+                    },
+                    "target": {
+                        "type": "PlayerRef",
+                        "player": "EachOpponent"
+                    }
+                }
+            }
+        ]
+    },
+    "metadata": {
+        "collectorNumber": "199",
+        "rarity": "RARE",
+        "artist": "Fahmi Fauzi",
+        "imageUri": "https://cards.scryfall.io/normal/front/b/c/bc121e37-b01c-4cf3-bd41-19a1cb21caa5.jpg?1784036722"
+    },
+    "colorIdentityOverride": [
+        "RED"
+    ]
+}
+
+// Kolinahr Priest
+{
+    "name": "Kolinahr Priest",
+    "manaCost": "{2}{U}",
+    "typeLine": "Creature — Vulcan Monk",
+    "oracleText": "Flash (You may cast this spell any time you could cast an instant.)",
+    "creatureStats": {
+        "power": 3,
+        "toughness": 2
+    },
+    "keywords": [
+        "FLASH"
+    ],
+    "metadata": {
+        "collectorNumber": "146",
+        "artist": "Andrey Kuzinskiy",
+        "flavorText": "\"What thee are about to see comes down from the time of the beginning without change. This is the Vulcan heart; this is the Vulcan soul. This is our way.\"\n—T'Pau",
+        "imageUri": "https://cards.scryfall.io/normal/front/0/1/0167486d-ed77-4612-a385-25251b544a14.jpg?1785981062"
+    },
+    "colorIdentityOverride": [
+        "BLUE"
+    ]
+}
+
+// Mek'leth Berserker
+{
+    "name": "Mek'leth Berserker",
+    "manaCost": "{3}{R}",
+    "typeLine": "Creature — Klingon Berserker",
+    "oracleText": "Menace (This creature can't be blocked except by two or more creatures.)",
+    "creatureStats": {
+        "power": 4,
+        "toughness": 3
+    },
+    "keywords": [
+        "MENACE"
+    ],
+    "metadata": {
+        "collectorNumber": "166",
+        "artist": "Johann Bodin",
+        "flavorText": "\"We Klingons have a reputation for ruthlessness. You will find that it is deserved.\"\n—Commander Kor, military governor of Organia",
+        "imageUri": "https://cards.scryfall.io/normal/front/4/f/4f503eb1-d95d-4c72-bc58-a7b9e9f92eb6.jpg"
+    },
+    "colorIdentityOverride": [
+        "RED"
+    ]
+}
+
+// Spock, Logical Choice
+{
+    "name": "Spock, Logical Choice",
+    "manaCost": "{3}{U}{U}",
+    "typeLine": "Legendary Creature — Vulcan Human Scientist",
+    "oracleText": "Vigilance (Attacking doesn't cause this creature to tap.)\n{T}: Draw a card.",
+    "creatureStats": {
+        "power": 3,
+        "toughness": 5
+    },
+    "keywords": [
+        "VIGILANCE"
+    ],
+    "script": {
+        "activatedAbilities": [
+            {
+                "id": "Spock, Logical Choice:1",
+                "cost": "CostTap",
+                "effect": {
+                    "type": "DrawCards",
+                    "count": {
+                        "type": "Fixed",
+                        "amount": 1
+                    }
+                },
+                "descriptionOverride": "{T}: Draw a card."
+            }
+        ]
+    },
+    "metadata": {
+        "collectorNumber": "194",
+        "rarity": "MYTHIC",
+        "artist": "Bastien Jez",
+        "flavorText": "\"In critical moments, men sometimes see exactly what they wish to see.\"",
+        "imageUri": "https://cards.scryfall.io/normal/front/5/a/5a741052-e92d-4e9c-8cfa-3b5ed1f432f5.jpg?1784065332"
+    },
+    "colorIdentityOverride": [
+        "BLUE"
+    ]
+}
+
 // Starfleet Crew
 {
     "name": "Starfleet Crew",
@@ -271,5 +432,30 @@
     },
     "colorIdentityOverride": [
         "RED"
+    ]
+}
+
+// Worf, Chief Tactical Officer
+{
+    "name": "Worf, Chief Tactical Officer",
+    "manaCost": "{2}{W}",
+    "typeLine": "Legendary Creature — Klingon Warrior Officer",
+    "oracleText": "Vigilance (Attacking doesn't cause this creature to tap.)",
+    "creatureStats": {
+        "power": 2,
+        "toughness": 3
+    },
+    "keywords": [
+        "VIGILANCE"
+    ],
+    "metadata": {
+        "collectorNumber": "141",
+        "rarity": "UNCOMMON",
+        "artist": "Ariel Orea",
+        "flavorText": "\"The true test of a warrior is not without. It is within.\"",
+        "imageUri": "https://cards.scryfall.io/normal/front/c/e/ced54aa6-c8ee-451f-91cd-967fe766ec13.jpg?1786005790"
+    },
+    "colorIdentityOverride": [
+        "WHITE"
     ]
 }

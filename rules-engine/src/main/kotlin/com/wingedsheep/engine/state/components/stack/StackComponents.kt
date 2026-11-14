@@ -38,19 +38,25 @@ data class SpellOnStackComponent(
     val wasBlightPaid: Boolean = false,  // For BlightOrPay additional cost — true if blight path was taken
     val wasWaterbendPaid: Boolean = false,  // For optional spell waterbend additional cost (Avatar) — true if "you may waterbend {N}" was paid; readable via WaterbendWasPaid
     /**
-     * Extra counters owed to the permanent this spell becomes, bought with the optional "pay any
-     * amount of mana" additional cost of an `AdditionalManaForEntryCounters` static (Chorus of the
-     * Conclave). Fixed when the cost is paid, so the counters arrive even if the granting permanent
-     * has left the battlefield before the spell resolves. Null when nothing was paid.
+     * Extra counters owed to the permanent this spell becomes, placed as it enters (CR 122.6) so
+     * counter-placement replacements see them then. Bought with the optional "pay any amount of
+     * mana" additional cost of an `AdditionalManaForEntryCounters` static (Chorus of the Conclave),
+     * or put on the spell while it's on the stack by a counter effect — "that creature enters with
+     * an additional +1/+1 counter on it" (Runadi, Jade Orb of Dragonkind), or at payment time by a
+     * `ManaSpellRider.EntersWithCountersWhenSpent` (Guildmages' Forum). Fixed when owed, so the
+     * counters arrive even if whatever granted them has left the battlefield before the spell
+     * resolves. Not copied (CR 707.2): a copy of the spell owes nothing.
      */
-    val additionalEntryCounters: AdditionalEntryCounters? = null,
+    val additionalEntryCounters: List<AdditionalEntryCounters> = emptyList(),
     /**
-     * Keywords the permanent this spell becomes gains with no end date, frozen at payment time by a
-     * `ManaSpellRider.GrantsKeywordWhenSpent` with `Duration.Permanent` (Hall of the Bandit Lord's
-     * "it gains haste"). Granted as the permanent enters; kept here on the stack object rather than
-     * as a floating effect so a spell that never resolves carries nothing into its next zone.
+     * Keywords the permanent this spell becomes gains, each for its own duration: frozen at payment
+     * time by a `ManaSpellRider.GrantsKeywordWhenSpent` (Hall of the Bandit Lord's "it gains haste",
+     * Carnelian Orb of Dragonkind's "until end of turn"), or while on the stack by a
+     * `GrantKeywordToSpellEffect` (Tyvar Kell's emblem; CR 400.7a). Granted as the
+     * permanent enters; kept here on the stack object rather than as a floating effect so a spell
+     * that never resolves carries nothing into its next zone (CR 400.7).
      */
-    val entryKeywordGrants: List<String> = emptyList(),
+    val entryKeywordGrants: List<EntryKeywordGrant> = emptyList(),
     /**
      * The opponent promised this spell's gift additional cost (CR 702.174a), or null when the gift
      * wasn't promised. A resolving permanent carries the fact onward in its cast-choices bag
@@ -61,8 +67,8 @@ data class SpellOnStackComponent(
     /**
      * Card-definition names of the cards revealed from hand and **spliced** onto this spell
      * (CR 702.47a), in the order their text was added. Each one's `spellEffect` is executed after the
-     * main spell's own effects when the spell resolves (CR 702.47b), with its own target slice from
-     * [splicedTargetsOrdered].
+     * main spell's own effects when the spell resolves (CR 702.47b), with its own slice of the spell's
+     * resolution-validated target slots — the tail of the flat list, in this order (CR 608.2b).
      *
      * Names rather than entity ids: the spliced card never leaves hand, so what the spell gained is
      * its *text*, not a reference to the object — and the spell must keep resolving that text even if
@@ -103,6 +109,8 @@ data class SpellOnStackComponent(
      * view can say how the spell was cast without a flag per mechanic — see
      * [com.wingedsheep.engine.view.CastProvenance]. Disturb, flashback, harmonize, emerge and
      * miracle have no `was*` flag at all, which is exactly why the stack could not describe them.
+     * Rules read it too: flashback's exile, escape's "escaped" mark, and the card's own
+     * alternative cost (`Conditions.SelfAlternativeCostWasPaid`). A free cast records none.
      */
     val alternativeCost: com.wingedsheep.engine.core.AlternativeCostType? = null,
     val wasWarped: Boolean = false,  // For warp - permanent is exiled at end step
@@ -180,6 +188,14 @@ data class SpellOnStackComponent(
      */
     val exiledAsCostSnapshots: List<EntitySnapshot> = emptyList(),
     /**
+     * Permanents tapped to pay this spell's additional cost (`CostAtom.TapPermanents`, or a
+     * variable tap cost), recorded at payment time (CR 601.2h). The spell counterpart of
+     * [ActivatedAbilityOnStackComponent.tappedPermanents] — read at resolution by
+     * `EffectTarget.TappedAsCost` (Swallow Whole's "the creature tapped to pay this spell's
+     * additional cost"). Convoke taps are not costs of this kind; they live in [convokedCreatures].
+     */
+    val tappedPermanents: List<EntityId> = emptyList(),
+    /**
      * Last-known-info snapshots (Rule 113.7a) for entities chosen at cost-pay time
      * that may later leave the battlefield before the spell resolves. Populated
      * when an [com.wingedsheep.sdk.scripting.AdditionalCost.ChooseEntity] step
@@ -213,6 +229,11 @@ data class SpellOnStackComponent(
      * [ManaSpentReader] by `DynamicAmount.SnowManaSpent` (Berg Strider's "if {S} was spent").
      */
     val manaSpentSnow: Int = 0,
+    /**
+     * The colors of the snow mana in [manaSpentSnow] (colorless snow mana adds none). Read via
+     * [ManaSpentReader] by `SpellCastPredicate.PaidWithSnowManaOfItsColors` (Boreal Outrider).
+     */
+    val manaSpentSnowColors: Set<Color> = emptySet(),
     /**
      * Per-color mana spent on the `{X}` portion of this spell, for a color-restricted X
      * (e.g. Soul Burn's "spend only black and/or red mana on X"). Read at resolution via
@@ -248,8 +269,9 @@ data class SpellOnStackComponent(
 ) : Component
 
 /**
- * [count] counters of [counterType] a resolving permanent spell enters with, bought as an additional
- * cost while casting (see [SpellOnStackComponent.additionalEntryCounters]).
+ * [count] counters of [counterType] a resolving permanent spell enters with — bought as an additional
+ * cost while casting, or put on the spell while it was on the stack (see
+ * [SpellOnStackComponent.additionalEntryCounters]).
  */
 @Serializable
 data class AdditionalEntryCounters(
@@ -306,13 +328,6 @@ data class TriggeredAbilityOnStackComponent(
      * Blunderbuss". Null for the source's own printed abilities.
      */
     val granterId: EntityId? = null,
-    /**
-     * The controller already answered this ability's leading "you may" when choosing its target:
-     * picking a target is the yes, so the resolution-time yes/no isn't asked a second time (see
-     * [com.wingedsheep.engine.event.TriggerProcessor.consentAnswerableAtTargeting]). Only the
-     * ability's top-level consent gate reads it; a later "you may" inside the effect still asks.
-     */
-    val consentAnsweredAtTargeting: Boolean = false,
     // Modal fields — populated when this triggered ability is a copy of a modal spell (700.2g).
     // Copies inherit the original's chosen modes; targets either inherit too (StormCopy default)
     // or are re-chosen by the copy controller while modes stay fixed.
@@ -510,6 +525,13 @@ data class ActivatedAbilityOnStackComponent(
      * reflexive triggers) that carry no restriction.
      */
     val sourceFaceChanges: Int? = null,
+    /**
+     * The source permanent's [com.wingedsheep.engine.state.components.battlefield.UntapCountComponent]
+     * clock the moment this ability was put onto the stack. Effects it creates "for as long as
+     * <source> remains tapped" hold only while the clock still reads this, so a source that
+     * untapped before resolution leaves them inert (CR 611.2b). Null for synthesized abilities.
+     */
+    val sourceUntapCount: Int? = null,
     val sourceBattlefieldTimestamp: Long? = null,
     val objectReferences: com.wingedsheep.engine.handlers.ObjectReferenceEnvironment =
         com.wingedsheep.engine.handlers.ObjectReferenceEnvironment(),
@@ -691,6 +713,19 @@ data class SpellContextComponent(
 ) : Component
 
 /**
+ * One keyword a permanent spell hands to the permanent it becomes ([SpellOnStackComponent.entryKeywordGrants]),
+ * lasting [duration] from the moment it enters. [sourceId] is what granted it (Tyvar Kell's emblem
+ * trigger's source), shown as the grant's origin; null credits the spell itself (a mana rider,
+ * whose producer may be long gone).
+ */
+@Serializable
+data class EntryKeywordGrant(
+    val keyword: String,
+    val duration: com.wingedsheep.sdk.scripting.Duration,
+    val sourceId: EntityId? = null,
+)
+
+/**
  * Marks a spell or ability on the stack as having been granted extra keywords (by enum name)
  * while it remains on the stack. Used by effects like Spinerock Tyrant that grant wither to
  * a copied or original spell. The component disappears with the spell entity when it leaves
@@ -722,9 +757,11 @@ data class SpellCopyTokenRidersComponent(
 ) : Component
 
 /**
- * Cast-this-way entry rider for a spell cast from the graveyard under a
- * [com.wingedsheep.sdk.scripting.MayCastFromGraveyard] grant that carries rider fields
- * (The Tomb of Aclazotz). The rider is frozen onto the stack spell at cast time — from the
+ * Cast-this-way entry rider for a spell cast under a permission that carries rider fields: a
+ * [com.wingedsheep.sdk.scripting.MayCastFromGraveyard] grant (The Tomb of Aclazotz), a forage or
+ * linked-exile permission's finality counter, or a may-play permission's
+ * [com.wingedsheep.engine.state.permissions.MayPlayPermission.entersTapped] (Kaldring, the
+ * Rimestaff — [entersTapped]). The rider is frozen onto the stack spell at cast time — from the
  * *specific* grant that authorized the cast, so it survives grant expiry and is unambiguous when
  * several graveyard-cast grants are active. Read by
  * [com.wingedsheep.engine.mechanics.stack.StackResolver] when the spell resolves onto the
@@ -734,8 +771,21 @@ data class SpellCopyTokenRidersComponent(
  * the stack (countered / fizzled spells simply never apply it).
  */
 @Serializable
-data class GraveyardCastRiderComponent(
+@SerialName("com.wingedsheep.engine.state.components.stack.GraveyardCastRiderComponent")
+data class CastThisWayEntryRiderComponent(
     val entersWithCounter: com.wingedsheep.sdk.core.CounterType? = null,
     val addedSubtype: String? = null,
-    val grantedAbility: com.wingedsheep.sdk.scripting.TriggeredAbility? = null
+    val grantedAbility: com.wingedsheep.sdk.scripting.TriggeredAbility? = null,
+    /** The grant's filters; the permanent enters tapped when it matches every one as it enters. */
+    val entersTapped: List<com.wingedsheep.sdk.scripting.GameObjectFilter> = emptyList(),
 ) : Component
+
+/**
+ * Cipher (CR 702.99a): the resolving spell's controller chose to exile it encoded on [creatureId].
+ * Stamped by [com.wingedsheep.engine.handlers.effects.stack.EncodeOnCreatureExecutor] as the last
+ * step of the spell's resolution; `NonPermanentSpellResolver` reads it as the spell leaves the stack
+ * — the card goes straight to exile, never the graveyard — and writes the encoding
+ * ([com.wingedsheep.engine.state.components.battlefield.EncodedOnComponent]) once it lands there.
+ */
+@Serializable
+data class CipherEncodeChoiceComponent(val creatureId: EntityId) : Component

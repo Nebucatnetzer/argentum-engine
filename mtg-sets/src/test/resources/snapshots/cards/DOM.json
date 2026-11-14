@@ -3905,7 +3905,8 @@
                         "zone": "Graveyard"
                     }
                 },
-                "ShuffleLibrary"
+                "ShuffleLibrary",
+                "EmitLibrarySearchedEvent"
             ]
         }
     },
@@ -4249,24 +4250,30 @@
     "name": "Gaea's Blessing",
     "manaCost": "{1}{G}",
     "typeLine": "Sorcery",
-    "oracleText": "Target player shuffles up to three target cards from their graveyard into their library. Draw a card.\nWhen Gaea's Blessing is put into your graveyard from your library, shuffle your graveyard into your library.",
+    "oracleText": "Target player shuffles up to three target cards from their graveyard into their library.\nDraw a card.\nWhen this card is put into your graveyard from your library, shuffle your graveyard into your library.",
     "script": {
         "spellEffect": {
             "type": "Composite",
             "effects": [
                 {
                     "type": "ForEach",
-                    "space": "IterationSpace.Targets",
+                    "space": {
+                        "type": "IterationSpace.TargetsOf",
+                        "group": "t1"
+                    },
                     "body": {
                         "type": "MoveToZone",
-                        "target": {
-                            "type": "ContextTarget",
-                            "index": 0
-                        },
+                        "target": "IterationEntity",
                         "destination": "Library"
                     }
                 },
-                "ShuffleLibrary",
+                {
+                    "type": "ShuffleLibrary",
+                    "target": {
+                        "type": "BoundVariable",
+                        "name": "t0"
+                    }
+                },
                 {
                     "type": "DrawCards",
                     "count": {
@@ -4278,13 +4285,18 @@
         },
         "targetRequirements": [
             {
+                "type": "TargetPlayer",
+                "id": "t0"
+            },
+            {
                 "type": "TargetObject",
                 "count": 3,
                 "optional": true,
                 "filter": {
-                    "baseFilter": {},
+                    "baseFilter": "own:target-player",
                     "zone": "Graveyard"
-                }
+                },
+                "id": "t1"
             }
         ],
         "triggeredAbilities": [

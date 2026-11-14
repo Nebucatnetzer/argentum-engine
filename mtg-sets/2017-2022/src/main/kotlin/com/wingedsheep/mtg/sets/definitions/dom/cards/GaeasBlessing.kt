@@ -4,38 +4,38 @@ import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.dsl.Effects
 import com.wingedsheep.sdk.dsl.card
 import com.wingedsheep.sdk.dsl.Patterns
+import com.wingedsheep.sdk.dsl.Targets
 import com.wingedsheep.sdk.model.Rarity
+import com.wingedsheep.sdk.scripting.GameObjectFilter
 import com.wingedsheep.sdk.scripting.filters.unified.TargetFilter
 import com.wingedsheep.sdk.scripting.targets.EffectTarget
-import com.wingedsheep.sdk.scripting.targets.TargetObject
 import com.wingedsheep.sdk.dsl.Triggers
 
 /**
  * Gaea's Blessing
  * {1}{G}
  * Sorcery
- * Target player shuffles up to three target cards from their graveyard into their
- * library. Draw a card.
- * When Gaea's Blessing is put into your graveyard from your library, shuffle your
- * graveyard into your library.
+ * Target player shuffles up to three target cards from their graveyard into their library.
+ * Draw a card.
+ * When this card is put into your graveyard from your library, shuffle your graveyard into
+ * your library.
  */
 val GaeasBlessing = card("Gaea's Blessing") {
     manaCost = "{1}{G}"
     colorIdentity = "G"
     typeLine = "Sorcery"
-    oracleText = "Target player shuffles up to three target cards from their graveyard into their library. Draw a card.\nWhen Gaea's Blessing is put into your graveyard from your library, shuffle your graveyard into your library."
+    oracleText = "Target player shuffles up to three target cards from their graveyard into their library.\nDraw a card.\nWhen this card is put into your graveyard from your library, shuffle your graveyard into your library."
 
     spell {
-        // Target up to 3 cards from any graveyard, move them to owner's library,
-        // shuffle, and draw a card.
-        target = TargetObject(
+        // The card slot reads the player slot: only cards from that player's graveyard.
+        val player = target(Targets.Player)
+        val cards = targets(
+            TargetFilter(GameObjectFilter.Any.ownedByTargetPlayer(), zone = Zone.GRAVEYARD),
             count = 3,
             optional = true,
-            filter = TargetFilter.CardInGraveyard
         )
-        effect = Effects.ForEachTarget(
-            Effects.Move(EffectTarget.ContextTarget(0), Zone.LIBRARY)
-        ) then Effects.ShuffleLibrary() then
+        effect = Effects.ForEachTargetOf(cards, Effects.Move(EffectTarget.IterationEntity, Zone.LIBRARY)) then
+            Effects.ShuffleLibrary(player) then
             Effects.DrawCards(1)
     }
 

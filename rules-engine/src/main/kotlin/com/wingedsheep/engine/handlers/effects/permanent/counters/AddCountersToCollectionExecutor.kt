@@ -51,6 +51,8 @@ class AddCountersToCollectionExecutor(
                 currentState, entityId, counterType, baseCount, placerId = context.controllerId,
                 predicateEvaluator = amountEvaluator.predicates, byEffect = true
             )
+            // Replaced away, or a kind this recipient can't have: nothing is placed or announced.
+            if (modifiedCount <= 0) continue
 
             val firstThisTurn = DamageUtils.isFirstCounterThisTurn(currentState, entityId)
             val firstOfTypeThisTurn = DamageUtils.isFirstCounterOfTypeThisTurn(currentState, entityId, counterType)
@@ -60,7 +62,7 @@ class AddCountersToCollectionExecutor(
             currentState = DamageUtils.markCounterPlacedOnCreature(currentState, context.controllerId, entityId, counterType)
 
             val entityName = currentState.getEntity(entityId)?.get<CardComponent>()?.name ?: ""
-            events.add(CountersAddedEvent(entityId, effect.counterType, modifiedCount, entityName, firstThisTurn, firstOfTypeThisTurn = firstOfTypeThisTurn, placedBy = context.controllerId))
+            events.add(CountersAddedEvent(entityId, effect.counterType, modifiedCount, entityName, firstThisTurn, firstOfTypeThisTurn = firstOfTypeThisTurn, placedBy = context.controllerId, totalCount = current.getCount(counterType) + modifiedCount))
         }
 
         return EffectResult.success(currentState, events)

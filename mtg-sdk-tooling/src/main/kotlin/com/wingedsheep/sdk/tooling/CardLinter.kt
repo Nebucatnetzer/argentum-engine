@@ -105,6 +105,11 @@ object CardLinter {
         if (Keyword.CONVOKE in card.keywords || card.cardFaces.any { Keyword.CONVOKE in it.keywords }) {
             slots.declared.add("CONVOKED_CREATURES")
         }
+        // A card's own alternative cost (CR 118.9) is a script field, not a node: paying it stamps
+        // SELF_ALTERNATIVE_COST_PAID (see PermanentEntry / ConditionEvaluator).
+        if (card.script.selfAlternativeCost != null || card.cardFaces.any { it.script.selfAlternativeCost != null }) {
+            slots.declared.add("SELF_ALTERNATIVE_COST_PAID")
+        }
 
         lintDefinition(card.name, fullTree, explicitTree, slots, findings)
         checkSlots(card.name, slots, findings)
@@ -122,7 +127,6 @@ object CardLinter {
         "AddColorlessMana",
         "AddManaOfChoice",
         "AddDynamicMana",
-        "AddAnyColorManaSpendOnChosenType",
         "AddOneManaOfEachColorAmong",
     )
 
@@ -354,7 +358,6 @@ object CardLinter {
             else (tree["type"] as? JsonPrimitive)?.contentOrNull in names ||
                 tree.values.any { ownEffectContains(it, names) }
         is JsonArray -> tree.any { ownEffectContains(it, names) }
-        else -> false
     }
 
     /** A serialized ability or card definition rather than a step of the effect being scanned. */
@@ -605,7 +608,7 @@ object CardLinter {
     ) {
         when (element) {
             is JsonObject -> {
-                if ((element["type"] as? JsonPrimitive)?.contentOrNull == "TargetObject") {
+                if ((element["type"] as? JsonPrimitive)?.contentOrNull in DYNAMIC_COUNT_TARGET_TYPES) {
                     fun present(field: String) = element[field]?.takeIf { it !is JsonNull } != null
                     fun flag(field: String) = (element[field] as? JsonPrimitive)?.contentOrNull == "true"
                     val max = present("dynamicMaxCount")
@@ -651,6 +654,9 @@ object CardLinter {
      */
     private val CHOOSER_BEARING_TARGET_TYPES = setOf("AnyTarget", "TargetObject")
 
+    /** Target requirements that carry a dynamic count (`dynamicMaxCount`) in their serialized form. */
+    private val DYNAMIC_COUNT_TARGET_TYPES = setOf("AnyTarget", "TargetObject")
+
     // =========================================================================================
     // Namespaces and registries
     // =========================================================================================
@@ -686,6 +692,7 @@ object CardLinter {
         put("GatherCards" to "storeAs", write(Space.COLLECTION))
         put("CaptureControllers" to "storeAs", write(Space.COLLECTION))
         put("StorePlayer" to "storeAs", write(Space.COLLECTION))
+        put("AnyPlayerMayPay" to "storePayerAs", write(Space.COLLECTION))
         put("GatherSubtypes" to "storeAs", write(Space.SUBTYPE_GROUPS))
         put("GatherUntilMatch" to "storeMatch", write(Space.COLLECTION))
         put("GatherUntilMatch" to "storeRevealed", write(Space.COLLECTION))
@@ -716,10 +723,14 @@ object CardLinter {
         put("CopyCollectionIntoCollection" to "storeAs", write(Space.COLLECTION))
         put("ForcePlay" to "storePlayedTo", write(Space.COLLECTION))
         put("CastFromCollectionWithoutPayingCost" to "storeCastTo", write(Space.COLLECTION))
+        put("CastAnyNumberFromCollectionWithoutPayingCost" to "storeCastTo", write(Space.COLLECTION))
         put("CounterAllOnStack" to "storeCountAs", write(Space.COLLECTION))
+        put("Counter" to "storeCounteredAs", write(Space.COLLECTION))
         put("Behold" to "storeAs", write(Space.COLLECTION))
         put("ChooseEntity" to "storeAs", write(Space.COLLECTION))
         put("ChooseOnePerCategory" to "storeAs", write(Space.COLLECTION))
+        // Permanents proliferate gave a counter to (Ripples of Potential).
+        put("Proliferate" to "storeAs", write(Space.COLLECTION))
         put("StoreNumber" to "name", write(Space.NUMBER))
         put("FlipCoins" to "storeHeadsAs", write(Space.NUMBER))
         put("FlipCoinsUntilLoss" to "storeWinsAs", write(Space.NUMBER))
@@ -730,7 +741,9 @@ object CardLinter {
         put("Fight" to "excessDamageVariable", write(Space.NUMBER))
         put("DealDamage" to "excessDamageVariable", write(Space.NUMBER))
         put("DealDamage" to "damageDealtVariable", write(Space.NUMBER))
+        put("DividedDamage" to "storeDamagedAs", write(Space.COLLECTION))
         put("PayCounters" to "storeAmountAs", write(Space.NUMBER))
+        put("RemoveCountersFromAmong" to "storeAmountAs", write(Space.NUMBER))
         put("CollectEvidenceChosenAmount" to "storeAmountAs", write(Space.NUMBER))
         put("ChooseSpellCastThisTurn" to "storeDamageDealtAs", write(Space.NUMBER))
         put("PayManaCostRepeatedly" to "storeCountAs", write(Space.NUMBER))
@@ -753,6 +766,7 @@ object CardLinter {
             "PairWithSource", "EmitChampionedEvent", "EnchantPutOntoBattlefield",
         )) put(type to "from", read(Space.COLLECTION))
         put("GrantCantBeBlockedExceptByCollection" to "collection", read(Space.COLLECTION))
+        put("CopyForOtherPossibleTargets" to "collection", read(Space.COLLECTION))
         put("ChoosePile" to "pileA", read(Space.COLLECTION))
         put("ChoosePile" to "pileB", read(Space.COLLECTION))
         put("ForEachCapturedController" to "collection", read(Space.COLLECTION))
@@ -779,6 +793,7 @@ object CardLinter {
         put("ExcludeOtherCollection" to "otherCollectionName", read(Space.COLLECTION))
         put("VariableReference" to "variableName", read(Space.NUMBER))
         put("NameEqualsChosen" to "variableName", read(Space.CHOSEN))
+        put("CardTypeEqualsChosen" to "variableName", read(Space.CHOSEN))
         put("HasSubtypeFromVariable" to "variableName", read(Space.CHOSEN))
         put("YouControlMostOfChosenType" to "chosenValueKey", read(Space.CHOSEN))
         put(null to "chosenSubtypeKey", read(Space.CHOSEN)) // GroupFilter (no discriminator)
@@ -819,6 +834,8 @@ object CardLinter {
         when {
             type == "RollDice" ->
                 (obj["resultCounts"] as? JsonObject)?.keys.orEmpty().map { Kind.WRITE to (Space.NUMBER to it) }
+            type == "Vote" ->
+                (obj["voteCounts"] as? JsonObject)?.keys.orEmpty().map { Kind.WRITE to (Space.NUMBER to it) }
             type == "ChooseCreatureType" ->
                 listOf(Kind.WRITE to (Space.CHOSEN to "chosenCreatureType"))
             // Paying "Reveal the creature type you chose" publishes the source's secret note into
@@ -904,6 +921,16 @@ object CardLinter {
         "Mayhem" to listOf("MAYHEM_CAST"),
         // Escape (CR 702.138b): an escape-cast permanent is stamped "escaped" (see PermanentEntry).
         "Escape" to listOf("ESCAPED"),
+        // Foretell (CR 702.143c): a spell cast from exile as a foretold card is stamped "foretold"
+        // (see CastSpellHandler.foretoldChoice), read back by Conditions.WasForetold.
+        "Foretell" to listOf("FORETOLD"),
+        // Madness (CR 702.35): a spell cast from exile for its madness cost is stamped "madness
+        // cost was paid" (see CastSpellHandler.madnessChoice), read by Conditions.MadnessCostWasPaid.
+        "Madness" to listOf("MADNESS_CAST"),
+        // Surge (CR 702.117a): a spell cast for its surge cost answers "surge cost was paid" from
+        // its alternative cost and stamps the slot on the permanent it becomes (see PermanentEntry),
+        // read by Conditions.SurgeCostWasPaid.
+        "Surge" to listOf("SURGE_CAST"),
         "BlightVariable" to listOf("BLIGHT_AMOUNT"),
         "BlightOrPay" to listOf("BLIGHT_AMOUNT"),
         // Resolution-time color choices: ChooseColorThen sets EffectContext.chosenColor for its
@@ -1501,11 +1528,21 @@ object CardLinter {
          * Collections the engine seeds for the ability before its effect runs, so a read with no
          * in-card writer is correct, not a silent no-op. `trigger.captured` is the batch-trigger
          * capture (the matching members of a `PermanentsEnteredEvent` batch — Kambal); the engine
-         * populates it when the triggered ability resolves.
+         * populates it when the triggered ability resolves. `trigger.damagedPlayers` is the players a
+         * "deal combat damage to one or more players" batch hit, usually read as its `_count`
+         * (Hordewing Skaab).
          */
-        fun engineSeeded(read: Access): Boolean =
-            read.space == Space.COLLECTION &&
-                read.name == com.wingedsheep.sdk.scripting.effects.IterationSpace.TRIGGER_CAPTURED_COLLECTION
+        fun engineSeeded(read: Access): Boolean {
+            val seeded = listOf(
+                com.wingedsheep.sdk.scripting.effects.IterationSpace.TRIGGER_CAPTURED_COLLECTION,
+                com.wingedsheep.sdk.scripting.effects.IterationSpace.TRIGGER_DAMAGED_PLAYERS,
+            )
+            return when (read.space) {
+                Space.COLLECTION -> read.name in seeded
+                Space.NUMBER -> seeded.any { read.name == "${it}_count" }
+                else -> false
+            }
+        }
 
         for (scope in state.scopes) {
             if (scope.collectionParent != null) continue // merged into parent already

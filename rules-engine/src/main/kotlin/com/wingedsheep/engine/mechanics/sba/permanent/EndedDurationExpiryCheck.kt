@@ -3,6 +3,7 @@ package com.wingedsheep.engine.mechanics.sba.permanent
 import com.wingedsheep.engine.core.ControlChangedEvent
 import com.wingedsheep.engine.core.ExecutionResult
 import com.wingedsheep.engine.core.GameEvent
+import com.wingedsheep.engine.event.GrantedActivatedAbility
 import com.wingedsheep.engine.mechanics.layers.ActiveFloatingEffect
 import com.wingedsheep.engine.mechanics.layers.ProjectedState
 import com.wingedsheep.engine.mechanics.durations.GrantDurationGate
@@ -12,6 +13,7 @@ import com.wingedsheep.engine.mechanics.sba.StateBasedActionCheck
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.battlefield.AttachedToComponent
 import com.wingedsheep.engine.state.components.battlefield.CountersComponent
+import com.wingedsheep.engine.state.components.battlefield.PhaseInLock
 import com.wingedsheep.engine.state.components.battlefield.PhasedOutComponent
 import com.wingedsheep.engine.state.components.battlefield.TappedComponent
 import com.wingedsheep.engine.state.components.identity.CardComponent
@@ -49,8 +51,9 @@ import com.wingedsheep.sdk.scripting.Duration
  *   projected controller is no longer the effect's controller. Drops the entire effect (not
  *   per-affected) — the source-controller half is binary, the source either is or isn't yours.
  *
- * The gates that depend only on the source or the affected object are additionally enforced for
- * duration-keyed grants in `grantedActivatedAbilities` / `grantedStaticAbilities`, which have no
+ * The gates that depend only on the source or the affected object — plus, for activated-ability
+ * grants, which record their controller, [Duration.WhileYouControlSource] — are additionally
+ * enforced for duration-keyed grants in `grantedActivatedAbilities` / `grantedStaticAbilities`, which have no
  * floating-effect representation and so would otherwise never expire — Kitesail Larcenist's
  * granted Treasure mana ability is the source-keyed case, Ultima's counter-keyed "{T}: Add {C}"
  * and Braided Net's activation lock the affected-keyed ones.
@@ -141,7 +144,11 @@ class EndedDurationExpiryCheck : StateBasedActionCheck {
             // for the attachment gate, of which permanent it is attached to). Shared with the
             // granted-ability path via [sourceGateHolds]; filtering per affected entity is
             // equivalent to all-or-nothing for the two gates that ignore the affected object.
-            is Duration.WhileSourceTapped,
+            // "for as long as <source> remains tapped" also reads the untap clock the effect was
+            // stamped with, so an untap between activation and resolution ends it (CR 611.2b).
+            is Duration.WhileSourceTapped ->
+                if (GrantDurationGate.sourceTapped(state, floating)) all else emptySet()
+
             is Duration.WhileSourceOnBattlefield,
             Duration.WhileSourceAttachedToAffected,
             Duration.WhileAffectedAttachedToSource ->
@@ -150,7 +157,7 @@ class EndedDurationExpiryCheck : StateBasedActionCheck {
                 }
 
             is Duration.WhileSourceTappedAndAffectedPowerAtMostSource -> {
-                if (!sourceTapped(state, floating.sourceId)) {
+                if (!GrantDurationGate.sourceTapped(state, floating)) {
                     emptySet()
                 } else {
                     val sourcePower = projected.getPower(floating.sourceId!!) ?: return all
@@ -179,7 +186,7 @@ class EndedDurationExpiryCheck : StateBasedActionCheck {
             is Duration.WhileYouControlSourceAndSourceTapped -> {
                 val sourceId = floating.sourceId
                 if (sourceId == null || !state.getBattlefield().contains(sourceId)) emptySet()
-                else if (!sourceTapped(state, sourceId)) emptySet()
+                else if (!GrantDurationGate.sourceTapped(state, floating)) emptySet()
                 else if (projected.getController(sourceId) != floating.controllerId) emptySet()
                 else all
             }
@@ -246,11 +253,15 @@ class EndedDurationExpiryCheck : StateBasedActionCheck {
      */
     private fun pruneEndedGrants(state: GameState): GameState {
         var result = state
-        if (state.grantedActivatedAbilities.any { grantConditionFails(state, it.entityId, it.sourceId, it.duration) }) {
+        // Activated grants also carry their "you" (Quicksmith Spy's "for as long as you control
+        // Quicksmith Spy"), so the controller-keyed WhileYouControlSource gate applies to them.
+        val activatedEnded = { grant: GrantedActivatedAbility ->
+            grantConditionFails(state, grant.entityId, grant.sourceId, grant.duration) ||
+                !GrantDurationGate.controllerGateHolds(state, grant.duration, grant.sourceId, grant.controllerId)
+        }
+        if (state.grantedActivatedAbilities.any(activatedEnded)) {
             result = result.copy(
-                grantedActivatedAbilities = state.grantedActivatedAbilities.filterNot {
-                    grantConditionFails(state, it.entityId, it.sourceId, it.duration)
-                }
+                grantedActivatedAbilities = state.grantedActivatedAbilities.filterNot(activatedEnded)
             )
         }
         if (state.grantedStaticAbilities.any { grantConditionFails(state, it.entityId, it.sourceId, it.duration) }) {
@@ -319,7 +330,7 @@ class EndedDurationExpiryCheck : StateBasedActionCheck {
     }
 
     /**
-     * Release every [PhaseInLock] whose window has closed: its source left the battlefield (or is
+     * Release every [PhaseInLock.WhileControlsSource] whose window has closed: its source left the battlefield (or is
      * itself phased out, so no one controls it) or its projected controller is no longer the
      * player who locked it. Release only clears the lock — the permanent stays phased out until its
      * controller's next untap step. One-way like the other latches: regaining control of the
@@ -327,7 +338,7 @@ class EndedDurationExpiryCheck : StateBasedActionCheck {
      */
     private fun pruneEndedPhaseInLocks(state: GameState): GameState {
         val locked = state.allBattlefieldEntities().filter {
-            state.getEntity(it)?.get<PhasedOutComponent>()?.phaseInLock != null
+            state.getEntity(it)?.get<PhasedOutComponent>()?.phaseInLock is PhaseInLock.WhileControlsSource
         }
         if (locked.isEmpty()) return state
         val projected = state.projectedState
@@ -335,7 +346,7 @@ class EndedDurationExpiryCheck : StateBasedActionCheck {
         var current = state
         for (entityId in locked) {
             val phased = current.getEntity(entityId)?.get<PhasedOutComponent>() ?: continue
-            val lock = phased.phaseInLock ?: continue
+            val lock = phased.phaseInLock as? PhaseInLock.WhileControlsSource ?: continue
             val holds = battlefield.contains(lock.sourceId) &&
                 projected.getController(lock.sourceId) == lock.controllerId
             if (!holds) {
@@ -352,9 +363,9 @@ class EndedDurationExpiryCheck : StateBasedActionCheck {
      *
      * The projection-dependent gates ([Duration.WhileSourceTappedAndAffectedPowerAtMostSource]) and
      * the ones that need the *effect's* controller ([Duration.WhileControlledByController],
-     * [Duration.WhileYouControlSource]) are deliberately not handled: a grant record carries no
-     * controller, and both shapes only ever appear on floating control/pump effects, which the
-     * per-effect loop above already reaps.
+     * [Duration.WhileYouControlSource]) are not handled here: most grant records carry no
+     * controller. The activated-ability store does, and [pruneEndedGrants] adds
+     * [GrantDurationGate.controllerGateHolds] for it (Quicksmith Spy).
      */
     private fun grantConditionFails(
         state: GameState,
@@ -374,9 +385,6 @@ class EndedDurationExpiryCheck : StateBasedActionCheck {
         sourceId: EntityId?,
         affectedId: EntityId
     ): Boolean = GrantDurationGate.sourceGateHolds(state, duration, sourceId, affectedId)
-
-    private fun sourceTapped(state: GameState, sourceId: EntityId?): Boolean =
-        GrantDurationGate.sourceTapped(state, sourceId)
 
     /**
      * Emit a [ControlChangedEvent] for each dropped entity of a control effect, reverting from the

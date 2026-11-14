@@ -1,13 +1,18 @@
 package com.wingedsheep.ai.engine
 
+import com.wingedsheep.engine.core.doesntUntapDuringUntapStep
 import com.wingedsheep.engine.mechanics.layers.ProjectedState
+import com.wingedsheep.engine.mechanics.layers.SerializableModification
 import com.wingedsheep.engine.mechanics.targeting.ColorProtection
+import com.wingedsheep.engine.mechanics.targeting.TypeQualityProtection
 import com.wingedsheep.engine.mechanics.targeting.SourceKindProtection
 import com.wingedsheep.engine.registry.CardRegistry
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.battlefield.DamageComponent
 import com.wingedsheep.engine.state.components.battlefield.TappedComponent
 import com.wingedsheep.engine.state.components.identity.CardComponent
+import com.wingedsheep.engine.state.components.identity.CommanderComponent
+import com.wingedsheep.engine.state.components.identity.TokenComponent
 import com.wingedsheep.sdk.core.AbilityFlag
 import com.wingedsheep.sdk.core.Keyword
 import com.wingedsheep.sdk.model.EntityId
@@ -60,6 +65,11 @@ object CombatMath {
             if (Keyword.HORSEMANSHIP.name !in bKeywords) return false
         }
 
+        // Skulk (CR 702.118b): can't be blocked by creatures with greater power
+        if (Keyword.SKULK.name in aKeywords) {
+            if ((projected.getPower(blocker) ?: 0) > (projected.getPower(attacker) ?: 0)) return false
+        }
+
         // Fear: only blocked by artifact or black creatures
         if (Keyword.FEAR.name in aKeywords) {
             val bColors = projected.getColors(blocker)
@@ -75,6 +85,15 @@ object CombatMath {
             val sharesColor = aColors.any { it in bColors }
             if (!sharesColor && "ARTIFACT" !in bTypes) return false
         }
+
+        // "Target creature can't block this creature this turn" (Screeching Griffin, Kozilek's
+        // Pathfinder): a pairwise floating restriction, the engine's CantBlockSpecificAttackerRule.
+        if (state.floatingEffects.any { floating ->
+                val modification = floating.effect.modification
+                modification is SerializableModification.CantBlockSpecificAttacker &&
+                    modification.attackerId == attacker && blocker in floating.effect.affectedEntities
+            }
+        ) return false
 
         // Protection (CR 702.16f — attacking creatures with protection can't be blocked by creatures
         // that have the stated quality).
@@ -195,8 +214,7 @@ object CombatMath {
         blocker: EntityId,
     ): Boolean {
         if (ColorProtection.isProtected(projected, attacker, projected.getColors(blocker))) return true
-        if (projected.getSubtypes(blocker).any { projected.hasKeyword(attacker, "PROTECTION_FROM_SUBTYPE_${it.uppercase()}") }) return true
-        if (projected.getSupertypes(blocker).any { projected.hasKeyword(attacker, "PROTECTION_FROM_SUPERTYPE_${it.uppercase()}") }) return true
+        if (TypeQualityProtection.matchedQuality(projected, attacker, blocker) != null) return true
         if (projected.getTypes(blocker).any { projected.hasKeyword(attacker, "PROTECTION_FROM_CARDTYPE_${it.uppercase()}") }) return true
         if (projected.hasKeyword(attacker, "PROTECTION_FROM_EACH_OPPONENT")) {
             val attackerController = projected.getController(attacker)
@@ -302,6 +320,53 @@ object CombatMath {
     }
 
     /**
+     * Who dies when [attacker] and [blocker] fight one-on-one: `(attacker dies, blocker dies)`.
+     *
+     * Plays the combat damage steps out (CR 510, 702.4, 702.7): a first-strike step in which first
+     * and double strikers deal damage, then a regular step in which every creature still alive
+     * without first strike deals it. So a double striker hits twice, a first striker that kills
+     * takes nothing back — deathtouch included — and marked damage counts. Indestructible survives.
+     * Board-only: no tricks, triggers or damage prevention.
+     */
+    fun duel(
+        state: GameState,
+        projected: ProjectedState,
+        attacker: EntityId,
+        blocker: EntityId,
+    ): Pair<Boolean, Boolean> {
+        val aKeywords = projected.getKeywords(attacker)
+        val bKeywords = projected.getKeywords(blocker)
+        val aPower = projected.getPower(attacker) ?: 0
+        val bPower = projected.getPower(blocker) ?: 0
+        val aLeft = (projected.getToughness(attacker) ?: 0) - (state.getEntity(attacker)?.get<DamageComponent>()?.amount ?: 0)
+        val bLeft = (projected.getToughness(blocker) ?: 0) - (state.getEntity(blocker)?.get<DamageComponent>()?.amount ?: 0)
+        val aIndestructible = Keyword.INDESTRUCTIBLE.name in aKeywords
+        val bIndestructible = Keyword.INDESTRUCTIBLE.name in bKeywords
+        val aDeathtouch = Keyword.DEATHTOUCH.name in aKeywords
+        val bDeathtouch = Keyword.DEATHTOUCH.name in bKeywords
+        val aDouble = Keyword.DOUBLE_STRIKE.name in aKeywords
+        val bDouble = Keyword.DOUBLE_STRIKE.name in bKeywords
+        val aFirst = aDouble || Keyword.FIRST_STRIKE.name in aKeywords
+        val bFirst = bDouble || Keyword.FIRST_STRIKE.name in bKeywords
+
+        var toAttacker = 0
+        var toBlocker = 0
+        var aDead = false
+        var bDead = false
+        fun step(aDeals: Boolean, bDeals: Boolean) {
+            val aHit = aDeals && !aDead && aPower > 0
+            val bHit = bDeals && !bDead && bPower > 0
+            if (aHit) toBlocker += if (aDeathtouch) maxOf(aPower, bLeft) else aPower
+            if (bHit) toAttacker += if (bDeathtouch) maxOf(bPower, aLeft) else bPower
+            aDead = !aIndestructible && toAttacker >= aLeft
+            bDead = !bIndestructible && toBlocker >= bLeft
+        }
+        if (aFirst || bFirst) step(aFirst, bFirst)
+        step(!aFirst || aDouble, !bFirst || bDouble)
+        return aDead to bDead
+    }
+
+    /**
      * Does [blocker] survive being blocked by / blocking [attacker]?
      * Checks if the attacker's power is enough to kill the blocker.
      */
@@ -404,9 +469,18 @@ object CombatMath {
          * it takes the hit rather than throw a creature away.
          */
         chumpBlocks: Boolean = true,
+        /**
+         * Let the blockers left over once every attacker has its blocker gang up on the tramplers,
+         * each soaking its toughness more of the overflow. Without it a trampler meets one blocker
+         * however many stand idle: a 7/7 trampler against five untapped creatures read as four
+         * damage through — "lethal" at 3 life whatever the AI did, so the crack-back stopped
+         * telling a chip attack from staying home (game `39e8aac6` turn 29).
+         */
+        stackOnTramplers: Boolean = false,
     ): Int {
         var totalDamage = 0
         val usedBlockers = mutableSetOf<EntityId>()
+        val trampleBlocks = mutableMapOf<EntityId, MutableList<EntityId>>()
 
         // Separate evasive from blockable
         val evasive = mutableListOf<EntityId>()
@@ -458,7 +532,7 @@ object CombatMath {
             if (hasTrample) {
                 // Opponent picks the highest-toughness blockers to minimize overflow
                 val bestBlockers = validBlockers.sortedByDescending { projected.getToughness(it) ?: 0 }.take(needed)
-                totalDamage += trampleOverflow(projected, attacker, bestBlockers)
+                trampleBlocks[attacker] = bestBlockers.toMutableList()
                 usedBlockers.addAll(bestBlockers)
             } else {
                 // Non-trampler: any blocker prevents all damage; opponent uses cheapest
@@ -466,6 +540,25 @@ object CombatMath {
                 // No damage gets through
             }
         }
+
+        if (stackOnTramplers) {
+            // Each idle body, biggest first, joins the trampler it can block that is still
+            // spilling the most over its blockers.
+            val idle = opponentBlockers.filter { it !in usedBlockers }
+                .sortedByDescending { projected.getToughness(it) ?: 0 }
+            for (blocker in idle) {
+                val target = trampleBlocks.entries
+                    .filter { (attacker, blockers) ->
+                        trampleOverflow(projected, attacker, blockers) > 0 &&
+                            blocker in getValidBlockersFor(state, projected, attacker, listOf(blocker)) &&
+                            (chumpBlocks || isWorthwhileBlock(state, projected, attacker, blocker))
+                    }
+                    .maxByOrNull { (attacker, blockers) -> trampleOverflow(projected, attacker, blockers) }
+                    ?: continue
+                target.value += blocker
+            }
+        }
+        totalDamage += trampleBlocks.entries.sumOf { (attacker, blockers) -> trampleOverflow(projected, attacker, blockers) }
 
         return totalDamage
     }
@@ -716,8 +809,13 @@ object CombatMath {
 
     /**
      * Estimate damage the opponent could deal on their next attack through our optimal blocking.
-     * Includes all non-defender creatures (they'll untap on their turn) regardless of current
-     * tapped state, giving a conservative (worst-case) estimate.
+     * Includes every non-defender creature that will be untapped for it — tapped ones too, since
+     * they untap on their turn — giving a conservative (worst-case) estimate.
+     *
+     * The exception is a tapped creature that doesn't untap during its controller's untap step
+     * (an Infinite Coursework on it): it can't attack next turn. Counting it made staying home
+     * read as lethal in game `ee882769`, and with every plan "dead" the AI attacked away the
+     * blockers that would have kept it alive.
      */
     fun estimateNextTurnDamage(
         state: GameState,
@@ -725,13 +823,65 @@ object CombatMath {
         opponentId: EntityId,
         myBlockers: List<EntityId>,
         chumpBlocks: Boolean = true,
+        stackOnTramplers: Boolean = false,
     ): Int {
-        val opponentAttackers = projected.getBattlefieldControlledBy(opponentId).filter { entityId ->
-            projected.isCreature(entityId) &&
-                Keyword.DEFENDER.name !in projected.getKeywords(entityId)
-        }
+        val opponentAttackers = nextTurnAttackers(state, projected, opponentId)
         if (opponentAttackers.isEmpty()) return 0
-        return calculateDamageThroughOptimalBlocking(state, projected, opponentAttackers, myBlockers, chumpBlocks)
+        return calculateDamageThroughOptimalBlocking(state, projected, opponentAttackers, myBlockers, chumpBlocks, stackOnTramplers)
+    }
+
+    /**
+     * The creatures [opponentId] can swing with on its next turn: no defender, and untapped by
+     * then — a tapped one untaps unless it doesn't untap during its controller's untap step.
+     */
+    fun nextTurnAttackers(state: GameState, projected: ProjectedState, opponentId: EntityId): List<EntityId> =
+        projected.getBattlefieldControlledBy(opponentId).filter { entityId ->
+            projected.isCreature(entityId) &&
+                Keyword.DEFENDER.name !in projected.getKeywords(entityId) &&
+                (state.getEntity(entityId)?.has<TappedComponent>() != true || !projected.doesntUntapDuringUntapStep(entityId))
+        }
+
+    /**
+     * Combat damage [sourceId] can still deal [defenderId] before [defenderId] loses to commander
+     * damage (CR 903.10a — the format's threshold, 21 in Commander, from one commander over the
+     * game). Null when the format has no commander damage or [sourceId] is not a commander (a
+     * token copy of one never is).
+     *
+     * Commander damage is a second life total per opposing commander, and the AI's lethal checks
+     * read only the first: production game `1cca8ef9` died at 11 life to a sixteenth point of
+     * commander damage it could have chump-blocked.
+     */
+    fun commanderDamageRoom(state: GameState, sourceId: EntityId, defenderId: EntityId): Int? {
+        val threshold = state.format.commanderDamageThreshold ?: return null
+        val source = state.getEntity(sourceId) ?: return null
+        if (!source.has<CommanderComponent>() || source.has<TokenComponent>()) return null
+        return threshold - state.commanderDamageOf(sourceId, defenderId)
+    }
+
+    /**
+     * Whether one of [attackers] alone, through [defenderBlockers]' best blocks, deals [defenderId]
+     * the commander damage it still has room for ([commanderDamageRoom]) — the commander-damage
+     * twin of "this attack is lethal", which life totals cannot see. [dealtSoFar] is commander
+     * damage the caller expects before this swing that the state does not hold yet (this combat's,
+     * when pricing the attack after it). False outside commander formats.
+     */
+    fun commanderDamageLethal(
+        state: GameState,
+        projected: ProjectedState,
+        attackers: List<EntityId>,
+        defenderId: EntityId,
+        defenderBlockers: List<EntityId>,
+        chumpBlocks: Boolean = true,
+        stackOnTramplers: Boolean = false,
+        dealtSoFar: (EntityId) -> Int = { 0 },
+    ): Boolean {
+        if (state.format.commanderDamageThreshold == null) return false
+        return attackers.any { attacker ->
+            val room = (commanderDamageRoom(state, attacker, defenderId) ?: return@any false) - dealtSoFar(attacker)
+            room <= 0 || calculateDamageThroughOptimalBlocking(
+                state, projected, listOf(attacker), defenderBlockers, chumpBlocks, stackOnTramplers,
+            ) >= room
+        }
     }
 
     /**

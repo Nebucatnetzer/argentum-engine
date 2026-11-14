@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.mechanics.stack
 
+import com.wingedsheep.sdk.scripting.AbilityTriggerCause
 import com.wingedsheep.engine.core.*
 import com.wingedsheep.engine.handlers.effects.EffectExecutorRegistry
 import com.wingedsheep.engine.handlers.PredicateEvaluator
@@ -20,6 +21,7 @@ import com.wingedsheep.sdk.scripting.ChoiceSlot
 import com.wingedsheep.sdk.scripting.EntersWithChoice
 import com.wingedsheep.sdk.scripting.effects.FaceDownMode
 import com.wingedsheep.sdk.scripting.targets.*
+import com.wingedsheep.sdk.scripting.OnceOnlyAbilityKind
 
 /**
  * Manages the stack: casting spells, activating abilities, and resolution.
@@ -55,9 +57,10 @@ class StackResolver(
     private val permanentEntry = PermanentEntry(cardRegistry, staticAbilityHandler, conditionEvaluator = predicateEvaluator.conditions)
     private val nonPermanentSpellResolver = NonPermanentSpellResolver(zones, cardRegistry, effects, predicateEvaluator, spliceTargetValidator)
     private val permanentSpellResolver = PermanentSpellResolver(
-        cardRegistry, effects, predicateEvaluator, permanentEntry, entersWithChoicePrompt
+        cardRegistry, effects, predicateEvaluator, permanentEntry, zones, entersWithChoicePrompt
     )
     private val spellResolver = SpellResolver(
+        zones = zones,
         cardRegistry = cardRegistry,
         predicateEvaluator = predicateEvaluator,
         targetValidator = targetValidator,
@@ -90,7 +93,7 @@ class StackResolver(
         additionalCostChoices: Map<ChoiceSlot, Int> = emptyMap(),
         wasBlightPaid: Boolean = false,
         wasWaterbendPaid: Boolean = false,
-        additionalEntryCounters: com.wingedsheep.engine.state.components.stack.AdditionalEntryCounters? = null,
+        additionalEntryCounters: List<com.wingedsheep.engine.state.components.stack.AdditionalEntryCounters> = emptyList(),
         giftRecipient: EntityId? = null,
         wasWarped: Boolean = false,
         wasDashed: Boolean = false,
@@ -117,6 +120,7 @@ class StackResolver(
         revealedAsCostSnapshots: List<EntitySnapshot> = emptyList(),
         exiledAsCostCards: List<EntityId> = emptyList(),
         exiledAsCostSnapshots: List<EntitySnapshot> = emptyList(),
+        tappedPermanents: List<EntityId> = emptyList(),
         chosenEntitySnapshots: List<EntitySnapshot> = emptyList(),
         manaSpentWhite: Int = 0,
         manaSpentBlue: Int = 0,
@@ -181,6 +185,7 @@ class StackResolver(
             revealedAsCostSnapshots = revealedAsCostSnapshots,
             exiledAsCostCards = exiledAsCostCards,
             exiledAsCostSnapshots = exiledAsCostSnapshots,
+            tappedPermanents = tappedPermanents,
             chosenEntitySnapshots = chosenEntitySnapshots,
             manaSpentWhite = manaSpentWhite,
             manaSpentBlue = manaSpentBlue,
@@ -204,9 +209,9 @@ class StackResolver(
         ability: TriggeredAbilityOnStackComponent,
         targets: List<ChosenTarget> = emptyList(),
         targetRequirements: List<TargetRequirement> = emptyList(),
-        causedByAttack: Boolean = false
+        triggerCause: AbilityTriggerCause? = null
     ): ExecutionResult =
-        StackPlacement.putTriggeredAbility(state, ability, targets, targetRequirements, causedByAttack)
+        StackPlacement.putTriggeredAbility(state, ability, targets, targetRequirements, triggerCause)
 
     /** Put a copy of a spell on the stack (CR 707.10). See [StackPlacement.putSpellCopy]. */
     fun putSpellCopy(
@@ -236,14 +241,16 @@ class StackResolver(
         targetRequirements: List<TargetRequirement> = emptyList(),
         emitActivationEvent: Boolean = true,
         costsTap: Boolean = false,
-        isExhaust: Boolean = false,
+        onceOnlyKind: OnceOnlyAbilityKind? = null,
         cantBeCopied: Boolean = false,
         isLoyalty: Boolean = false,
         loyaltyCountersRemoved: Int = 0,
+        sourceLastKnown: com.wingedsheep.engine.state.components.stack.EntitySnapshot? = null,
+        sourceZone: com.wingedsheep.sdk.core.Zone? = null,
     ): ExecutionResult =
         StackPlacement.putActivatedAbility(
-            state, ability, targets, targetRequirements, emitActivationEvent, costsTap, isExhaust,
-            cantBeCopied, isLoyalty, loyaltyCountersRemoved
+            state, ability, targets, targetRequirements, emitActivationEvent, costsTap, onceOnlyKind,
+            cantBeCopied, isLoyalty, loyaltyCountersRemoved, sourceLastKnown, sourceZone
         )
 
     // =========================================================================
@@ -311,6 +318,16 @@ class StackResolver(
      */
     internal fun resolvePermanentSpellAfterEntryCopy(state: GameState, spellId: EntityId): ExecutionResult =
         permanentSpellResolver.resolveAfterEntryCopy(state, spellId)
+
+    /** See [PermanentSpellResolver.resolveAfterEntryPayment]. */
+    internal fun resolvePermanentSpellAfterEntryPayment(state: GameState, spellId: EntityId, paid: Boolean): ExecutionResult =
+        permanentSpellResolver.resolveAfterEntryPayment(state, spellId, paid)
+
+    internal fun resolvePermanentSpellWithGrantedCopy(
+        state: GameState,
+        spellId: EntityId,
+        choice: com.wingedsheep.engine.handlers.effects.copy.EntryCopyChoice,
+    ): ExecutionResult = permanentSpellResolver.resolveWithGrantedCopy(state, spellId, choice)
 
     /**
      * Apply the resolving permanent's "enters with …" replacement effects (CR 614.1c). See

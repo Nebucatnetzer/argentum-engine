@@ -10,6 +10,8 @@ An unofficial Magic: The Gathering rules engine and online play platform. Not af
 
 **[Play now at magic.wingedsheep.com](https://magic.wingedsheep.com)** · **[Join our Discord](https://discord.gg/dy6eSRPWzu)**
 
+**Want to help?** Missing a card from your deck? Run `just contribute` and let Claude Code or Codex build it — see [Contributing](#contributing).
+
 ---
 
 ## Overview
@@ -39,7 +41,7 @@ Distinct implemented cards, day by day since the project began. Regenerated dail
 
 ### Prerequisites
 
-- JDK 21+
+- JDK 25+
 - Node.js 18+
 - Docker (optional, for Redis)
 - [just](https://github.com/casey/just) command runner
@@ -355,14 +357,64 @@ Contributions are very welcome, and I'm genuinely grateful for every PR. To keep
 healthy, there's one rule above all others:
 
 > **No slop PRs.** A reviewer's time is the scarcest resource here. Please open a PR only when
-> you've built and tested it yourself, kept the change focused, and made it faithful to the actual
-> Magic rules (no shortcuts). A polished small PR is worth far more than a large unverified one.
+> it's been tested, it's faithful to the actual Magic rules (no shortcuts), and every change in it is
+> there on purpose. Built with a frontier model through `just contribute`? Great — the gate and review
+> it runs are exactly that check. A large unverified PR is still worth less than a small careful one.
 
-### Using AI to implement cards
+### Quick start: contribute cards with an AI agent
+
+The fastest way to help is to make the cards *you* want to play work. One command walks you through it:
+
+```bash
+just contribute
+```
+
+It checks your setup, then asks three questions:
+
+1. **What to build** — your deck or card list (paste any Moxfield / Archidekt / MTGA export, type
+   card names, or drop the file into the terminal), or a whole set by code or name. It shows how many
+   of the cards already work before anything starts.
+2. **Which agent and model** — whichever of [Claude Code](https://claude.com/claude-code) and
+   [Codex](https://github.com/openai/codex) you have installed, with a model of your choice.
+3. **How to deliver it** —
+   - **Local branch, one PR at the end** (the default, and the only option without push access). The
+     agent works through the missing cards a batch at a time; each batch is tested (`just loop-gate`),
+     reviewed by fresh-context subagents, and committed on one local branch. Nothing is pushed. When
+     it's done, skim the commits, push the branch to your fork, and open one PR.
+   - **Pull requests** (maintainers with push access). Each batch becomes a reviewed PR that merges
+     once CI is green.
+
+Cards that need new engine features aren't faked: the agent records them as gaps and builds each
+missing capability properly (with the `add-feature` skill) before the cards that need it.
+
+**You'll need:** JDK 25+, [`just`](https://github.com/casey/just), `git`, `jq`, Python 3, and
+Claude Code or Codex. The [GitHub CLI](https://cli.github.com) (`gh`) is optional — it lets the agent
+skip cards someone else's open PR already adds.
+
+**Before you start:** `main` is the source of truth for what's implemented; open PRs are what's in
+flight. Check how much of a deck already works with:
+
+```bash
+just card-list-status my-deck.txt     # implemented vs missing, from your checkout
+```
+
+The wizard is a front end for three loops you can also run directly (each `--help`s):
+
+| Command | What it does |
+|---------|--------------|
+| `just card-loop <list-file> [model] [--local]` | Implements every missing card of a list or decklist |
+| `just set-loop <set> [model]` | Implements a whole set from its backlog, one PR at a time |
+| `just commander-loop [model] [top]` | Makes EDHREC's top Commander decks playable, deck by deck |
+
+Models: `opus`, `sonnet`, `astra` (Codex `gpt-6-astra`), any `claude-*` ID, or `codex:<model-id>`.
+`just loops` shows what every running loop is doing; `just loop-watch <name>` opens a live dashboard.
+
+### Using AI to implement cards by hand
 
 Using AI to implement cards is encouraged — most of the card catalog is data, and the project ships
 agent skills that automate the workflow correctly (Scryfall
-lookup, oracle errata, set registration, scenario tests, reprint handling):
+lookup, oracle errata, set registration, scenario tests, reprint handling). They live in
+`.claude/skills/` (Claude Code) and `.agents/skills/` (Codex):
 
 - **`add-card <CARD_NAME> <SET_CODE>`** — implement a specific card.
 - **`add-random-card <SET_CODE>`** — pick a random unimplemented card from a set and implement it.
@@ -466,8 +518,10 @@ hard, or waiting on a feature we do plan to build, stays a normal gap.
 - Verify Comprehensive Rules numbers via the official WotC rules page <https://magic.wizards.com/en/rules>
   before citing them in code, comments, or commit messages. The linked plain-text `.txt` is too large to fetch
   into context — download it and `grep` locally.
-- Run `just build` (simple changes) or `just test` (new effects/engine changes) and confirm green
-  before opening the PR.
+- Run `just loop-gate` (it runs the tests your diff can break; CI runs the full suite) and confirm
+  green before opening the PR. Card changes: `just loop-gate --rebless` and check only your cards moved.
+- AI-built PRs are welcome — frontier models (current Claude and GPT models) implement cards well.
+  Say which agent and model built it.
 
 Questions or ideas? [Join the Discord](https://discord.gg/dy6eSRPWzu).
 

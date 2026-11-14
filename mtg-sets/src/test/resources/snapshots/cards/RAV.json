@@ -116,7 +116,8 @@
                                     ]
                                 }
                             },
-                            "storeAs": "gathered0"
+                            "storeAs": "gathered0",
+                            "search": true
                         },
                         {
                             "type": "SelectFromCollection",
@@ -3173,7 +3174,8 @@
                                 }
                             },
                             "body": {
-                                "type": "GrantProtectionsSharedByGroup",
+                                "type": "GrantKeywordVariantsSharedByGroup",
+                                "keyword": "PROTECTION",
                                 "group": {
                                     "baseFilter": "creature ctrl:you"
                                 },
@@ -4953,7 +4955,7 @@
         "replacementEffects": [
             "MultiplyTokenCreation",
             {
-                "type": "DoubleCounterPlacement",
+                "type": "ScaleCounterPlacement",
                 "appliesTo": {
                     "type": "CounterPlacementEvent",
                     "recipient": {
@@ -5929,7 +5931,7 @@
                         "IsAttachedToBySource"
                     ]
                 },
-                "nonManaAbilitiesOnly": true
+                "abilities": "NON_MANA"
             }
         ],
         "auraTarget": {
@@ -12844,6 +12846,9 @@
                     "baseFilter": {
                         "cardPredicates": [
                             "IsActivatedAbility"
+                        ],
+                        "statePredicates": [
+                            "HasSingleTarget"
                         ]
                     },
                     "zone": "Stack"
@@ -15225,7 +15230,8 @@
                                 "zone": "Library",
                                 "filter": "instant red|white mv<=4"
                             },
-                            "storeAs": "gathered0"
+                            "storeAs": "gathered0",
+                            "search": true
                         },
                         {
                             "type": "SelectFromCollection",
@@ -15241,6 +15247,7 @@
                             "prompt": "Search for a red or white instant card with mana value 4 or less to cast without paying its mana cost"
                         },
                         "ShuffleLibrary",
+                        "EmitLibrarySearchedEvent",
                         {
                             "type": "CastFromCollectionWithoutPayingCost",
                             "from": "selected1"
@@ -17262,7 +17269,11 @@
                 },
                 "destination": "Battlefield",
                 "fromZone": "Graveyard",
-                "addCounterType": "PLUS_ONE_PLUS_ONE"
+                "entryCounters": [
+                    {
+                        "counterType": "PLUS_ONE_PLUS_ONE"
+                    }
+                ]
             },
             "otherwise": {
                 "type": "MoveToZone",

@@ -20,8 +20,31 @@ class ReplacementContinuationResumer(
 ) : ContinuationResumerModule, AutoResumerModule {
 
     override fun resumers(): List<ContinuationResumer<*>> = listOf(
-        resumer(ReplacementChoiceContinuation::class, ::resumeReplacementChoice)
+        resumer(ReplacementChoiceContinuation::class, ::resumeReplacementChoice),
+        resumer(DamageReplacementContinuation::class, ::resumeDamageReplacement),
+        resumer(KeywordActionInsteadContinuation::class, ::resumeKeywordActionInstead)
     )
+
+    private fun resumeDamageReplacement(state: GameState, continuation: DamageReplacementContinuation,
+        response: DecisionResponse, checkForMore: CheckForMore): ExecutionResult {
+        val answer = if (continuation.numberPrefix != null && continuation.numberMax != null) {
+            (response as? NumberChosenResponse)?.number?.takeIf { it in continuation.numberMin..continuation.numberMax }
+                ?.let { continuation.numberPrefix + it }
+        } else when (response) {
+                is OptionChosenResponse -> continuation.optionKeys.getOrNull(response.optionIndex)
+                is YesNoResponse -> continuation.optionKeys.getOrNull(if (response.choice) 0 else 1)
+                else -> null
+            }
+        if (answer == null) return ExecutionResult.error(state, "Expected a valid damage replacement answer")
+        val recorded = com.wingedsheep.engine.handlers.effects.damage.DamageReplacementChain.record(state, continuation.choiceKey, answer)
+        val replay = com.wingedsheep.engine.handlers.effects.damage.DamageReplacementReveals.begin(recorded)
+        val result = if (continuation.effect != null && continuation.context != null)
+            services.effectExecutorRegistry.execute(replay, continuation.effect, continuation.context)
+        else com.wingedsheep.engine.handlers.effects.damage.DamageReplacementChain.deal(
+            services.zones, replay, continuation.instances, excessToController = continuation.excessToController)
+        if (result.outcome is Outcome.Paused) return ExecutionResult.propagatePause(result.state, result.events)
+        return checkForMore(result.stateWithOutputsHandedOn(), result.events)
+    }
 
     override fun autoResumers(): List<AutoResumer<*>> = listOf(
         autoResumer(ReplacementRidersContinuation::class) { state, continuation, events, checkForMore ->
@@ -43,6 +66,36 @@ class ReplacementContinuationResumer(
             resumeReplacementResolve(state, continuation, events, checkForMore)
         }
     )
+
+    /**
+     * Resume a keyword action after the player answered an optional "instead" replacement
+     * ([KeywordActionInsteadContinuation]). Yes: the replacement's effect runs rooted at its
+     * source, and the action doesn't happen. No: the remaining offers are put in turn, and with
+     * none left the action runs as printed.
+     */
+    private fun resumeKeywordActionInstead(
+        state: GameState,
+        continuation: KeywordActionInsteadContinuation,
+        response: DecisionResponse,
+        checkForMore: CheckForMore
+    ): ExecutionResult {
+        if (response !is YesNoResponse) {
+            return ExecutionResult.error(state, "Expected yes/no response for a keyword-action replacement")
+        }
+        val execute = services.effectExecutorRegistry::execute
+        val offer = continuation.offers.first()
+        val result = if (response.choice) {
+            execute(state, offer.replacementEffect,
+                com.wingedsheep.engine.handlers.effects.KeywordActionReplacements.replacementContext(state, offer))
+        } else {
+            com.wingedsheep.engine.handlers.effects.KeywordActionReplacements.offerInstead(
+                state, continuation.action, continuation.offers.drop(1),
+                continuation.reissue, continuation.actionContext, execute
+            )
+        }.toExecutionResult()
+        if (result.outcome is Outcome.Paused) return result
+        return checkForMore(result.state, result.events.toList())
+    }
 
     /**
      * Resume after the player chose one of multiple competing replacement

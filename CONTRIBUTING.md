@@ -25,6 +25,10 @@ If anything below is unclear, that's the fastest place to ask.
 ## TL;DR
 
 - **PRs are welcome** — no need to DM first.
+- **Fastest start: `just contribute`.** Paste a decklist (or pick a set), pick
+  a Claude or GPT model, and an agent implements the missing cards —
+  tested, reviewed and committed on a local branch you turn into one PR. See
+  [Contributing with an AI agent](#contributing-with-an-ai-agent).
 - **A small, careful PR is the easiest kind to merge.** One card, faithful
   to its Scryfall text, with a quick manual playthrough — and a scenario
   test if it does anything new or subtle — is exactly what I'm looking for.
@@ -37,6 +41,52 @@ If anything below is unclear, that's the fastest place to ask.
   permission needed.
 - **Forks, custom sets, AI agents against the gym** — go ahead, and please
   share what you make in `#showcase`.
+
+## Contributing with an AI agent
+
+AI-built contributions are welcome. Frontier models (current Claude and GPT
+models, through Claude Code or Codex) implement cards well, and the repo ships
+the workflow, so you don't have to invent one:
+
+```bash
+just card-list-status my-deck.txt   # what your deck is missing, read from your checkout
+just contribute                     # guided: pick cards, agent, model, mode — and go
+```
+
+`just contribute` checks your tools (JDK 25+, `just`, `git`, `jq`, and Claude
+Code or Codex) and asks three things: what to build (paste your decklist, or
+pick a set), which model, and how to deliver it. Then it starts a loop that
+works through the missing cards one unit at a time:
+
+- **Triage** — each missing card is checked against its Scryfall oracle text
+  and rulings: either it composes from existing SDK primitives, or it's blocked
+  on a named missing capability (a *gap*).
+- **Card batches** — up to 15 ready cards per unit, using the `add-card`
+  skill: canonical printing placement, reprint rows, a scenario test when the
+  card earns one.
+- **Gaps** — one missing engine capability per unit, built with the
+  `add-feature` skill, with engine tests and the SDK reference updated.
+- **Every unit** is gated (`just loop-gate`), reviewed by fresh-context
+  subagents (`review-changes`), and only then committed.
+
+Without push access the work always goes to a **local branch**: every
+commit stays on `loop-cards-<list>-local` and nothing is pushed. When the loop
+reports it's done:
+
+1. Skim the commits (`git log -p origin/main..loop-cards-<list>-local`).
+2. Optionally play a few of the cards that do something new. `just ui-dev`
+   plus the `generate-scenario` skill sets up a board.
+3. Push the branch to your fork and open one PR. In the body, say which agent
+   and model built it.
+
+A big list can be split across several PRs. Any prefix of the branch's commits
+is a coherent PR, because each commit passed the gate on its own.
+
+**Before you start:** `main` is the source of truth. Work in flight is in the
+[open PRs](https://github.com/wingedsheep/argentum-engine/pulls); with the
+GitHub CLI signed in, the loop skips cards another open PR already adds. Large
+lists or anything engine-shaped: say hi in `#dev` first so two people don't
+build the same gap.
 
 ## What makes a good PR
 
@@ -126,11 +176,12 @@ These come up often enough to be worth calling out:
 - **Silent mutations.** Every state change should emit a `GameEvent` so
   triggers and the client can react. If you find yourself wanting to update
   state without an event, that's usually a sign something is wrong.
-- **AI-generated card batches.** I've had contributors push large numbers of
-  agent-generated cards that didn't hold up under review. I won't merge
-  those. If you're using AI assistance, that's fine — but you, the human,
-  should have read every line, played the card, and convinced yourself it's
-  right before opening the PR.
+- **AI output nobody stood behind.** Using AI is welcome — frontier models
+  (current Claude and GPT models) are good enough to implement cards well,
+  and `just contribute` gives them the same skills, gate and review the
+  maintainers' own loops use. What doesn't get merged is output from weaker
+  or unguided setups that skipped the gate and the review. Say which model
+  built the PR, and skim the diff before you open it.
 
 ## Ideas, bugs, and discussion
 

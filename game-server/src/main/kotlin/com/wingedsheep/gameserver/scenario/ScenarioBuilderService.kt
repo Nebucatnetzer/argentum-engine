@@ -568,6 +568,10 @@ class ScenarioBuilderService(
                 ?.takeIf { it >= 0 } ?: dungeon.topmostRoom
             state = com.wingedsheep.engine.mechanics.dungeon.DungeonService.enter(state, playerId, dungeon, "scenario").first
             state = com.wingedsheep.engine.mechanics.dungeon.DungeonService.moveTo(state, playerId, room, "scenario").first
+            // Staging the marker isn't a venture this turn (a per-turn venture cap would read it).
+            state = state.updateEntity(playerId) {
+                it.without<com.wingedsheep.engine.state.components.player.VenturesThisTurnComponent>()
+            }
             return this
         }
 
@@ -604,10 +608,12 @@ class ScenarioBuilderService(
             // CardComponent.cardDefinitionId matches the key used by CardRegistry. Without the
             // set-code prefix, registry lookups (e.g. TriggerAbilityResolver.getTriggeredAbilities)
             // miss and the card silently has no triggered abilities.
+            // A modal DFC's back face is registered under its bare name only, so fall back to the
+            // name whenever the registry doesn't know the numbered key (else its abilities vanish).
             val definitionId = cardDef.metadata.collectorNumber?.let { cn ->
                 if (cardDef.setCode != null) "${cardDef.name}#${cardDef.setCode}-$cn"
                 else "${cardDef.name}#$cn"
-            } ?: cardDef.name
+            }?.takeIf { cardRegistry.getCard(it) != null } ?: cardDef.name
             val cardComponent = CardComponent(
                 cardDefinitionId = definitionId,
                 name = cardDef.name,
@@ -627,6 +633,7 @@ class ScenarioBuilderService(
                 hasNonManaActivatedAbility = cardDef.hasNonManaActivatedAbility,
                 hasActivatedAbility = cardDef.hasActivatedAbility,
                 hasCycling = cardDef.hasCycling,
+                hasKicker = cardDef.hasKicker,
                 // Mirror CardEntityFactory so CardPredicate.HasAdventure (Frantic Firebolt's
                 // graveyard tally) sees adventurer cards created in dev scenarios.
                 hasAdventure = cardDef.isAdventure,

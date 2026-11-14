@@ -5,11 +5,13 @@ import com.wingedsheep.engine.core.EffectResult
 import com.wingedsheep.engine.event.GrantedStaticAbility
 import com.wingedsheep.engine.handlers.EffectContext
 import com.wingedsheep.engine.handlers.effects.EffectExecutor
-import com.wingedsheep.engine.handlers.effects.ResolutionPlayerBaker
+import com.wingedsheep.engine.handlers.effects.ResolutionFilterBaker
 import com.wingedsheep.engine.state.GameState
 import com.wingedsheep.engine.state.components.identity.CardComponent
 import com.wingedsheep.sdk.core.Zone
 import com.wingedsheep.sdk.scripting.CantBeBlockedBy
+import com.wingedsheep.sdk.scripting.LookAtTopOfLibrary
+import com.wingedsheep.sdk.scripting.PlayFromTopWithAlternativeCost
 import com.wingedsheep.sdk.scripting.StaticAbility
 import com.wingedsheep.sdk.scripting.effects.GrantStaticAbilityEffect
 import kotlin.reflect.KClass
@@ -97,7 +99,7 @@ class GrantStaticAbilityExecutor : EffectExecutor<GrantStaticAbilityEffect> {
 
     /**
      * Freeze player references that only the resolving context can answer into concrete ids
-     * (see [ResolutionPlayerBaker]) — the grant's filters are read later, at block declaration,
+     * (see [ResolutionFilterBaker]) — the grant's filters are read later, at block declaration,
      * where the pipeline's stored choices and the ability's targets are gone. Extend the `when`
      * below when another granted static carries a player-scoped filter.
      */
@@ -107,8 +109,17 @@ class GrantStaticAbilityExecutor : EffectExecutor<GrantStaticAbilityEffect> {
         state: GameState
     ): StaticAbility = when (ability) {
         is CantBeBlockedBy -> {
-            val baked = ResolutionPlayerBaker.bake(ability.blockerFilter, context, state)
+            val baked = ResolutionFilterBaker.bake(ability.blockerFilter, context, state)
             if (baked == ability.blockerFilter) ability else ability.copy(blockerFilter = baked)
+        }
+        // Xanathar, Guild Kingpin: "their library" is the target opponent, fixed as the grant resolves.
+        is LookAtTopOfLibrary -> {
+            val baked = ResolutionFilterBaker.bakePlayer(ability.libraryOwner, context, state)
+            if (baked == ability.libraryOwner) ability else ability.copy(libraryOwner = baked)
+        }
+        is PlayFromTopWithAlternativeCost -> {
+            val baked = ResolutionFilterBaker.bakePlayer(ability.libraryOwner, context, state)
+            if (baked == ability.libraryOwner) ability else ability.copy(libraryOwner = baked)
         }
         else -> ability
     }

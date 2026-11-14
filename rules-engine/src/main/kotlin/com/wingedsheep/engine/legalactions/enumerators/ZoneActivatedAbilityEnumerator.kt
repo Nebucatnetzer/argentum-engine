@@ -1,5 +1,6 @@
 package com.wingedsheep.engine.legalactions.enumerators
 
+import com.wingedsheep.engine.mechanics.cost.SacrificeCostAssignment
 import com.wingedsheep.engine.state.LifePaymentPurpose
 
 import com.wingedsheep.engine.legalactions.surfacedRequirements
@@ -24,7 +25,7 @@ import com.wingedsheep.sdk.scripting.TimingRule
 
 /**
  * Enumerates activated abilities on cards in a non-battlefield [zone] the player owns —
- * one instance per zone (registered for [Zone.GRAVEYARD] and [Zone.HAND]).
+ * one instance per zone (registered for [Zone.GRAVEYARD], [Zone.HAND], [Zone.COMMAND] and [Zone.EXILE]).
  *
  * The abilities surfaced are those whose `activateFromZone` matches this enumerator's [zone]:
  * - **Graveyard** — Undead Gladiator ({1}{B}, Discard a card: Return this from your graveyard…),
@@ -32,8 +33,14 @@ import com.wingedsheep.sdk.scripting.TimingRule
  * - **Hand** — the "discard this card from hand" activated abilities such as Steel Wrecking Ball
  *   ({1}{R}, Discard this card: Destroy target artifact) and Stegron the Dinosaur Man, plus
  *   Urban Retreat's "{2}, Return a tapped creature you control: put this onto the battlefield".
+ * - **Command zone** — the Momir Basic avatar, Derevi's "put Derevi onto the battlefield from the
+ *   command zone", and commander ninjutsu (a `ReturnToHand` cost, like hand ninjutsu).
+ * - **Exile** — an ability a resolving effect granted to one exiled card (Q, Stacking the Deck's
+ *   "Exile a card from your hand: Create a copy of this card. You may cast the copy. Activate only
+ *   if this card is exiled."). The grant ends as the card leaves exile (CR 400.7).
  *
- * Handles cost checking for Mana, Discard, DiscardSelf, ExileSelf, Blight, and Composite (with
+ * Handles cost checking for Mana, Discard, DiscardSelf, ExileSelf, Blight, Sacrifice (one or several
+ * atoms, jointly — [SacrificeCostAssignment]), and Composite (with
  * ReturnToHand), plus target requirements and X/auto-tap info.
  * [com.wingedsheep.engine.handlers.actions.ability.ActivateAbilityHandler] already accepts any
  * non-battlefield `activateFromZone` generically (owner + zone-membership check), so no handler
@@ -132,7 +139,7 @@ class ZoneActivatedAbilityEnumerator(
                         ability, state, entityId, playerId, context.targetUtils,
                         predicateEvaluator = predicateEvaluator
                     ),
-                    state, entityId, playerId, ability.isExhaust, ability.isPowerUp, ability.isManaAbility,
+                    state, entityId, playerId, ability.onceOnlyKind, ability.isManaAbility,
                     chosenTargetIds = if (ability.targetRequirements.isEmpty()) emptyList() else null,
                     abilityKeyword = ability.keyword,
                 )
@@ -151,6 +158,13 @@ class ZoneActivatedAbilityEnumerator(
 
                 if (!com.wingedsheep.engine.mechanics.cost.PlayerCounterPayment.canAffordAbility(state, playerId, effectiveCost)) continue
 
+                // Sacrifice atoms ("Sacrifice a Swamp and a Forest: Return Jarad from your graveyard")
+                // are unpayable without enough permanents — and, with several atoms, without one
+                // disjoint assignment (a lone Swamp Forest dual pays one atom, not both). The engine
+                // asks which permanents when the bare action arrives, so there's no payload to build.
+                val sacrificeGroups = SacrificeCostAssignment.groups(state, effectiveCost, playerId, entityId, context.predicateEvaluator)
+                if (sacrificeGroups.isNotEmpty() && !SacrificeCostAssignment.hasDisjointAssignment(sacrificeGroups)) continue
+
                 when (effectiveCost) {
                     is AbilityCost.Atom -> when (val atom = effectiveCost.atom) {
                         is CostAtom.Mana -> {
@@ -167,7 +181,7 @@ class ZoneActivatedAbilityEnumerator(
                     is AbilityCost.Blight -> {
                         blightCost = effectiveCost
                         blightCreatures = context.projected.getBattlefieldControlledBy(playerId)
-                            .filter { context.projected.isCreature(it) && context.projected.canReceiveCounters(it) }
+                            .filter { context.projected.isCreature(it) && context.projected.canReceiveCounters(it, com.wingedsheep.sdk.core.CounterType.MINUS_ONE_MINUS_ONE) }
                         if (blightCreatures.isEmpty()) costCanBePaid = false
                     }
                     is AbilityCost.Composite -> {
@@ -201,12 +215,13 @@ class ZoneActivatedAbilityEnumerator(
                                     // Other atoms — engine validates at payment.
                                     else -> {}
                                 }
-                                // Self-removal costs are always payable — the card is in [zone].
-                                is AbilityCost.ExileSelf, is AbilityCost.DiscardSelf -> {}
+                                // Costs paid with the card itself are always payable — the card is in [zone].
+                                is AbilityCost.ExileSelf, is AbilityCost.DiscardSelf,
+                                is AbilityCost.PutSelfIntoLibrary, is AbilityCost.RevealSelf -> {}
                                 is AbilityCost.Blight -> {
                                     blightCost = subCost
                                     blightCreatures = context.projected.getBattlefieldControlledBy(playerId)
-                                        .filter { context.projected.isCreature(it) && context.projected.canReceiveCounters(it) }
+                                        .filter { context.projected.isCreature(it) && context.projected.canReceiveCounters(it, com.wingedsheep.sdk.core.CounterType.MINUS_ONE_MINUS_ONE) }
                                     if (blightCreatures.isEmpty()) {
                                         costCanBePaid = false; break
                                     }

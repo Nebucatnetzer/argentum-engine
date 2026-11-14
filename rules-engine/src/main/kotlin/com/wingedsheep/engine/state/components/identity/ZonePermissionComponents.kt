@@ -164,15 +164,54 @@ data class PlayWithAdditionalCostComponent(
  *
  * @param controllerId The player who has this cost increase when casting.
  * @param cost Mana added to the spell's cost — generic for a tax, colored for an additional cost.
+ * @param unlessAnyTargetMatches The tax is waived when any of the spell's chosen permanent targets
+ *   matches this filter (a creature *spell* it targets is not "a creature you control") — "if that spell doesn't target a creature you control, it costs {8} more" (Mavinda,
+ *   Students' Advocate). Null taxes every cast.
+ * @param grantedPermissionId The [com.wingedsheep.engine.state.permissions.MayPlayPermission] the
+ *   tax was stamped alongside ("costs {8} more to cast **this way**"): honoured only while that
+ *   permission exists, so a card left uncast in a graveyard isn't taxed by a later turn's cast.
+ *   Null for a tax that lives as long as the card's zone (Soul Partition, Lightstall Inquisitor).
  */
 @Serializable
 data class PlayWithCostIncreaseComponent(
     val controllerId: EntityId,
     val cost: com.wingedsheep.sdk.core.ManaCost,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val unlessAnyTargetMatches: com.wingedsheep.sdk.scripting.GameObjectFilter? = null,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val grantedPermissionId: EntityId? = null,
 ) : Component {
+    /** True when this tax can price [playerId]'s cast in [state] — see [grantedPermissionId]. */
+    fun appliesTo(state: com.wingedsheep.engine.state.GameState, playerId: EntityId): Boolean =
+        controllerId == playerId &&
+            (grantedPermissionId == null || state.mayPlayPermissions.any { it.id == grantedPermissionId })
+
     /** A generic-mana tax of [amount] (Soul Partition's {2}). */
     constructor(controllerId: EntityId, amount: Int) :
         this(controllerId, com.wingedsheep.sdk.core.ManaCost.parse("{$amount}"))
+}
+
+/**
+ * Marks a card as costing **less** to cast for the specified player, for one resolution-time cast —
+ * "you may cast it. It costs {4} less to cast this way" (Uvilda, Dean of Perfection). A cost
+ * reduction (CR 601.2f): applied after the base and every increase, and it takes only generic mana
+ * off, never a colored requirement. Stamped by the cast-from-collection executor when its effect
+ * carries a `costReduction`, stripped once the cast is made or abandoned.
+ *
+ * @param controllerId The player whose cast is discounted.
+ * @param genericReduction The generic mana taken off the total cost.
+ * @param grantedPermissionId The one-shot permission the discount was stamped with; honoured only
+ *   while it exists, like [PlayWithFixedAlternativeManaCostComponent.grantedPermissionId].
+ */
+@Serializable
+data class PlayWithCostReductionComponent(
+    val controllerId: EntityId,
+    val genericReduction: Int,
+    val grantedPermissionId: EntityId,
+) : Component {
+    /** True when this discount prices [playerId]'s cast in [state]. */
+    fun appliesTo(state: com.wingedsheep.engine.state.GameState, playerId: EntityId): Boolean =
+        controllerId == playerId && state.mayPlayPermissions.any { it.id == grantedPermissionId }
 }
 
 /**
@@ -194,13 +233,34 @@ data class PlayWithCostIncreaseComponent(
  *   entire cost is waterbend-reducible. The cast handler and enumerator surface the tap-to-help
  *   option and reduce the cost by the tapped permanents through the shared
  *   [com.wingedsheep.engine.mechanics.mana.AlternativePaymentHandler] machinery.
+ * @param grantedPermissionId Set for a one-shot resolution-time cast (Jadzi's "cast it by paying
+ *   {1}"): the stamp is honoured only while that [com.wingedsheep.engine.state.permissions.MayPlayPermission]
+ *   exists, so a cast cancelled mid-announcement can't leave the card discounted for a later cast.
+ *   Null for stamps that live as long as the card's zone (airbend, foretell, madness).
+ * @param faceCosts The fixed cost of casting one of the card's alternative faces, by face name,
+ *   where it differs from [fixedCost] — a foretell cost granted as "its mana cost reduced by {2}"
+ *   (Dream Devourer) is each face's own cost reduced (a modal DFC's back, an Adventure). A face
+ *   absent from the map is cast for [fixedCost]. Read through [costFor].
  */
 @Serializable
 data class PlayWithFixedAlternativeManaCostComponent(
     val controllerId: EntityId,
     val fixedCost: com.wingedsheep.sdk.core.ManaCost,
-    val waterbend: Boolean = false
-) : Component
+    val waterbend: Boolean = false,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val grantedPermissionId: EntityId? = null,
+    @kotlinx.serialization.EncodeDefault(kotlinx.serialization.EncodeDefault.Mode.NEVER)
+    val faceCosts: Map<String, com.wingedsheep.sdk.core.ManaCost> = emptyMap(),
+) : Component {
+    /** The fixed cost of casting the face named [castFaceName] (null: the primary face). */
+    fun costFor(castFaceName: String?): com.wingedsheep.sdk.core.ManaCost =
+        castFaceName?.let { faceCosts[it] } ?: fixedCost
+
+    /** True when this stamp prices [playerId]'s cast in [state] — see [grantedPermissionId]. */
+    fun appliesTo(state: com.wingedsheep.engine.state.GameState, playerId: EntityId): Boolean =
+        controllerId == playerId &&
+            (grantedPermissionId == null || state.mayPlayPermissions.any { it.id == grantedPermissionId })
+}
 
 /**
  * Marks a spell so that if it would be put into a graveyard after resolving, being countered or
@@ -224,11 +284,11 @@ data class PlayWithFixedAlternativeManaCostComponent(
  *   it actually lands in exile, so the UI can show the exiled cards tethered under
  *   the source permanent (e.g. Goliath Daydreamer's "exile that card with a dream
  *   counter on it" pile). Only applied when the spell actually resolves into exile.
- * @param makePlotted When true, the card becomes *plotted* (CR 718) for its owner once it lands
- *   in exile — the same effect as [com.wingedsheep.sdk.scripting.effects.MakePlottedEffect], but
- *   applied to a self-cast spell as it resolves rather than to a targeted spell. Used by Lilah,
- *   Undefeated Slickshot: "exile that spell instead of putting it into your graveyard as it
- *   resolves. If you do, it becomes plotted." Only applied when the card actually lands in exile.
+ * @param exiledRider What happens to the card once it lands in exile as the spell resolves
+ *   ([com.wingedsheep.sdk.scripting.effects.MarkSpellExileOnResolveEffect]): it becomes *plotted*
+ *   (CR 702.170) for its owner (Lilah, Undefeated Slickshot), or a delayed trigger returns it to its
+ *   owner's hand at the beginning of the next end step (Feather, the Redeemed). Only applied when the
+ *   card actually lands in exile.
  * @param everyStackExit When true, the rider covers *every* way the spell leaves the stack, not just
  *   the graveyard-bound ones — a bounce to hand or a put-into-library is sent to [destination] too.
  *   That is the "instead of putting it anywhere else any time it would leave the stack" clause of
@@ -247,7 +307,7 @@ data class AfterResolveDestinationComponent(
      */
     val onlyIfResolved: Boolean = false,
     val linkedSourceId: EntityId? = null,
-    val makePlotted: Boolean = false,
+    val exiledRider: com.wingedsheep.sdk.scripting.effects.ExiledSpellRider? = null,
     val everyStackExit: Boolean = false
 ) : Component {
     /** The zone [destination] names — the two members differ in placement, not only in zone. */

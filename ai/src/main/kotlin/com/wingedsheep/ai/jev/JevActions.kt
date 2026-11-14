@@ -38,7 +38,7 @@ internal class JevActions(
                     attackers, 0, info.blockerMaxBlockCounts?.get(blocker) ?: 1)
             }.filterValues { it.isNotEmpty() })
         }
-        if (action is CrewVehicle) return action.copy(crewCreatures = powerPayment(info))
+        if (action is CrewVehicle) return if (action.alternativeCostFrom != null) action else action.copy(crewCreatures = powerPayment(info))
         if (action is SaddleMount) return action.copy(saddleCreatures = powerPayment(info))
         if (action !is CastSpell && action !is ActivateAbility && action !is CycleCard) return action
 
@@ -62,7 +62,7 @@ internal class JevActions(
             chosen
         }
         val modeTargets = modes.map { targets(it.targetRequirements, x) }
-        val targets = if (modal != null) modeTargets.flatten() else targets(
+        val targetGroups = if (modal != null) modeTargets else targetGroups(
             info.targetRequirements ?: if (info.requiresTargets) listOf(LegalActionTargetInfo(
                 index = 0, description = info.targetDescription ?: "Target", minTargets = info.minTargets,
                 maxTargets = info.targetCount, validTargets = info.validTargets.orEmpty(),
@@ -71,18 +71,28 @@ internal class JevActions(
                 xConstrainsPower = info.xConstrainsTargetPower, xConstrainsCount = info.xConstrainsTargetCount,
                 xConstrainsCountExactly = info.xConstrainsTargetCountExactly,
             )) else emptyList(), x)
+        val targets = targetGroups.flatten()
         val costs = listOfNotNull(info.additionalCostInfo) + info.additionalCostInfo?.alsoRequired.orEmpty() + modes.mapNotNull { it.additionalCostInfo } +
             List((modes.size - 1).coerceAtLeast(0)) { modal?.additionalCostPerExtraMode }.filterNotNull()
         val payment = costs.map { cost(it, x.takeIf { action is CastSpell }) }.reduceOrNull(::combine)
         val manaPayment = manaPayment(info)
         val alternative = alternative(info)
-        val damage = if (info.requiresDamageDistribution && info.totalDamageToDistribute != null) {
-            JevDecisions(q, label).distribute("Divide damage", targets.map(::targetId), info.totalDamageToDistribute!!, info.minDamagePerTarget ?: 1)
+        // A total that reads a mana-paid {X} (Shatterskull Smashing) is priced per X by the server.
+        val divisionTotal = info.totalDamageByX?.get(x ?: 0) ?: info.totalDamageToDistribute
+        val damage = if (info.requiresDamageDistribution && divisionTotal != null) {
+            // A division scoped to one requirement (Magma Opus) is among that requirement's targets only.
+            val divided = info.distributionTargetGroup?.let { targetGroups.getOrNull(it).orEmpty() } ?: targets
+            if (info.distributionTargetGroup != null && divided.size < 2) null
+            else JevDecisions(q, label).distribute("Divide damage", divided.map(::targetId), divisionTotal, info.minDamagePerTarget ?: 1)
         } else null
+        val groupCounts = targetGroups.map { it.size }.takeIf { modal == null && info.distributionTargetGroup != null }
         return when (action) {
             is CastSpell -> action.copy(targets = targets.ifEmpty { action.targets }, xValue = x ?: action.xValue,
-                additionalCostPayment = payment ?: action.additionalCostPayment, paymentStrategy = manaPayment,
+                // The engine pre-fills the named opponent of an "an opponent gains life" cost per cast.
+                additionalCostPayment = payment?.copy(lifeGainRecipient = action.additionalCostPayment?.lifeGainRecipient)
+                    ?: action.additionalCostPayment, paymentStrategy = manaPayment,
                 alternativePayment = alternative.takeUnless { it.isEmpty } ?: action.alternativePayment, damageDistribution = damage,
+                targetGroupCounts = groupCounts ?: action.targetGroupCounts,
                 chosenModes = if (modal == null) action.chosenModes else modes.map { it.index },
                 modeTargetsOrdered = if (modal == null) action.modeTargetsOrdered else modeTargets)
             is ActivateAbility -> action.copy(targets = targets.ifEmpty { action.targets }, xValue = x ?: action.xValue,
@@ -98,8 +108,13 @@ internal class JevActions(
         "Choose creatures with total power at least ${info.tapForPowerRequired}",
         info.tapForPowerCreatures.orEmpty().map { it.entityId })
 
-    private fun targets(requirements: List<LegalActionTargetInfo>, x: Int?): List<ChosenTarget> {
+    private fun targets(requirements: List<LegalActionTargetInfo>, x: Int?): List<ChosenTarget> =
+        targetGroups(requirements, x).flatten()
+
+    /** The chosen targets, one group per requirement. */
+    private fun targetGroups(requirements: List<LegalActionTargetInfo>, x: Int?): List<List<ChosenTarget>> {
         val chosenIds = mutableListOf<EntityId>()
+        val groups = mutableListOf<List<ChosenTarget>>()
         for (r in requirements) {
             val candidates = r.validTargetsByPrefix?.get(chosenIds.joinToString(","))
                 ?: if (r.validTargetsByPrefix == null) r.validTargets else emptyList()
@@ -111,9 +126,11 @@ internal class JevActions(
             }
             val max = if (r.xConstrainsCount && x != null) x else r.maxTargets
             val min = if (r.xConstrainsCountExactly && x != null) x else minOf(r.minTargets, max)
-            chosenIds += cards(r.description, options, min, max)
+            val picked = cards(r.description, options, min, max)
+            chosenIds += picked
+            groups += picked.map(::target)
         }
-        return chosenIds.map(::target)
+        return groups
     }
 
     private fun target(id: EntityId): ChosenTarget {
@@ -127,7 +144,7 @@ internal class JevActions(
         }
     }
 
-    /** [x] is the cast's announced X, which a "remove X counters" cost (no fixed total) owes exactly. */
+    /** [x] is the cast's announced X, which a "remove X counters" or "sacrifice X creatures" cost owes exactly. */
     private fun cost(c: AdditionalCostInfo, x: Int? = null): AdditionalCostPayment {
         fun select(prompt: String, ids: List<EntityId>, min: Int, max: Int = min) =
             if (ids.isEmpty()) emptyList() else cards(prompt, ids, min, max)
@@ -145,7 +162,9 @@ internal class JevActions(
         return AdditionalCostPayment(
             sacrificedPermanents = if (variableSacrifice) emptyList()
             else select("Sacrifice for ${c.description}", c.validSacrificeTargets, c.sacrificeCount),
-            discardedCards = select("Discard for ${c.description}", c.validDiscardTargets, c.discardCount),
+            // "Discard X cards" (Nahiri's Wrath) owes exactly the announced X.
+            discardedCards = select("Discard for ${c.description}", c.validDiscardTargets,
+                if (c.countIsX) x ?: 0 else c.discardCount),
             tappedPermanents = select("Tap for ${c.description}", c.validTapTargets, c.tapCount),
             bouncedPermanents = select("Return to hand for ${c.description}", c.validBounceTargets, c.bounceCount),
             exiledCards = if (c.validCraftMaterials.isNotEmpty())
@@ -158,9 +177,13 @@ internal class JevActions(
             beheldCards = select("Behold for ${c.description}", c.validBeholdTargets, c.beholdCount),
             revealedCards = select("Reveal for ${c.description}", c.validRevealTargets, c.revealCount),
             blightTargets = select("Blight for ${c.description}", c.validBlightTargets, 1),
+            counterPlacementTargets = select("Choose for ${c.description}", c.validCounterPlacementTargets, 1),
             blightAmount = if (c.blightVariableMaxX > 0) q.number("Choose blight X", 0, c.blightVariableMaxX) else 0,
             payXLifeAmount = if (c.payXLifeMaxX > 0) q.number("Choose life to pay", 0, c.payXLifeMaxX) else 0,
-            variableCostPermanents = if (variableSacrifice)
+            // "Sacrifice X creatures" (Eliminate the Competition) owes exactly the announced X.
+            variableCostPermanents = if (variableSacrifice && c.countIsX)
+                select("Sacrifice for ${c.description}", c.validSacrificeTargets, x ?: 0)
+            else if (variableSacrifice)
                 select("Sacrifice for ${c.description}", c.validSacrificeTargets, c.sacrificeCount, c.validSacrificeTargets.size)
             else if (c.costType == "TapForTotalPower")
                 cards("Tap creatures with total power at least ${c.tapForPowerRequired}", c.tapForPowerCreatures.map { it.entityId })
@@ -206,6 +229,7 @@ internal class JevActions(
         tappedPermanents = a.tappedPermanents + b.tappedPermanents,
         bouncedPermanents = a.bouncedPermanents + b.bouncedPermanents,
         blightTargets = a.blightTargets + b.blightTargets,
+        counterPlacementTargets = a.counterPlacementTargets + b.counterPlacementTargets,
         blightAmount = a.blightAmount + b.blightAmount,
         payXLifeAmount = a.payXLifeAmount + b.payXLifeAmount,
         distributedCounterRemovals = a.distributedCounterRemovals + b.distributedCounterRemovals,

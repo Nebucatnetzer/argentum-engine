@@ -6,6 +6,7 @@ import com.wingedsheep.sdk.scripting.conditions.Condition
 import com.wingedsheep.sdk.scripting.filters.unified.TargetFilter
 import com.wingedsheep.sdk.scripting.text.TextReplaceable
 import com.wingedsheep.sdk.scripting.text.TextReplacer
+import com.wingedsheep.sdk.scripting.values.CardNumericProperty
 import com.wingedsheep.sdk.scripting.values.DynamicAmount
 import com.wingedsheep.sdk.scripting.util.numberToWord
 import com.wingedsheep.sdk.scripting.util.pluralNounPhrase
@@ -37,6 +38,35 @@ import kotlinx.serialization.Serializable
  * relative to the controller). Only the announcement layer reads it, to route the selection
  * decision to the right player.
  */
+/**
+ * An aggregate cap on a multi-target choice: the chosen targets' summed [property] may not exceed
+ * [amount] — "… with total mana value 6 or less" (Kairi, the Swirling Sky), "… with total power 10
+ * or less" (Nethroi, Apex of Death). Each target counts its *current* value (power projected on the
+ * battlefield; off it, the card's own power with a `*` evaluated by its characteristic-defining
+ * ability, CR 604.3); an object without the property counts 0.
+ *
+ * [amount] is resolved as the targets are chosen (so `DynamicAmount.XValue` reads the X just paid)
+ * and enforced by `TargetValidator` (authoritative) and, on an interactive target pause, against
+ * the cap and per-candidate values baked into the decision. Because a value can change while the
+ * spell or ability waits, the cap restricts the *set*: when the still-legal targets of the
+ * requirement exceed it at resolution (CR 608.2b), every one of them is illegal (Nethroi's ruling).
+ * The cap-on-a-sum sibling of [TargetObject.sameNumericProperty] / [TargetObject.differentNumericProperty],
+ * over the same [CardNumericProperty] axis.
+ */
+@Serializable
+data class TotalCap(val property: CardNumericProperty, val amount: DynamicAmount) {
+    /** "total power 10 or less". */
+    val description: String get() = "total ${property.description} ${amount.description} or less"
+
+    companion object {
+        /** "… with total mana value [amount] or less". */
+        fun manaValue(amount: DynamicAmount) = TotalCap(CardNumericProperty.MANA_VALUE, amount)
+
+        /** "… with total power [amount] or less". */
+        fun power(amount: DynamicAmount) = TotalCap(CardNumericProperty.POWER, amount)
+    }
+}
+
 @Serializable
 enum class TargetChooser {
     Controller,
@@ -100,6 +130,19 @@ sealed interface TargetRequirement : TextReplaceable<TargetRequirement> {
     val unlimited: Boolean get() = false
     /** Named identifier for this target requirement. When set, enables BoundVariable resolution. */
     val id: String? get() = null
+    /**
+     * A target count only knowable at cast or trigger time — "up to X target creatures", "each of
+     * up to X targets". When set it is the maximum and the static [count] is only a placeholder;
+     * the engine resolves it (X is announced before targets are chosen, CR 601.2b–c) and locks it
+     * in once targets are chosen. Null — the default — means the static [count] is the cap.
+     * Carried by [TargetObject] and [AnyTarget]; other shapes don't take it yet.
+     */
+    val dynamicMaxCount: DynamicAmount? get() = null
+    /**
+     * The dynamic floor paired with [dynamicMaxCount] — "X target creatures", exactly X. Only
+     * [TargetObject] carries it; null means [effectiveMinCount] is the floor.
+     */
+    val dynamicMinCount: DynamicAmount? get() = null
 
     /** Effective minimum after considering optional/unlimited flags */
     val effectiveMinCount: Int get() = if (optional || unlimited) 0 else minCount
@@ -202,7 +245,12 @@ data class AnyTarget(
     /** Additional predicates shared by permanent and player candidates. */
     val filter: GameObjectFilter = GameObjectFilter.Any,
     /** "Any number of targets" (Fireball) — no upper bound, minimum 0. See [TargetRequirement.unlimited]. */
-    override val unlimited: Boolean = false
+    override val unlimited: Boolean = false,
+    /**
+     * "Each of up to X targets" (Crackle with Power) — see [TargetRequirement.dynamicMaxCount].
+     * Author it with `optional = true` so fewer (or none) may be chosen.
+     */
+    override val dynamicMaxCount: DynamicAmount? = null
 ) : TargetRequirement {
     override fun applyTextReplacement(replacer: TextReplacer): TargetRequirement {
         val replaced = filter.applyTextReplacement(replacer)
@@ -214,6 +262,7 @@ data class AnyTarget(
             append(
                 when {
                     unlimited -> "any number of targets"
+                    dynamicMaxCount != null -> "up to ${dynamicMaxCount.description} targets"
                     count == 1 -> "any target"
                     minCount < count -> "${countRange(maxOf(minCount, 1), count)} targets"
                     else -> "${numberToWord(count)} targets"
@@ -446,8 +495,8 @@ data class TargetObject(
     override val optional: Boolean = false,
     val filter: TargetFilter,
     override val id: String? = null,
-    val dynamicMaxCount: DynamicAmount? = null,
-    val dynamicMinCount: DynamicAmount? = null,
+    override val dynamicMaxCount: DynamicAmount? = null,
+    override val dynamicMinCount: DynamicAmount? = null,
     /**
      * When true and more than one target is chosen for this requirement, every chosen
      * target must be controlled by the same player ("two target creatures controlled by
@@ -509,17 +558,13 @@ data class TargetObject(
      */
     val sameCardType: Boolean = false,
     /**
-     * When non-null, the chosen card targets for this requirement must have a **combined mana
-     * value no greater than this amount** — "any number of target creature cards with total mana
-     * value X or less" (Fire Lord Sozin). The [DynamicAmount] is resolved once the ability is
-     * being put on the stack (so `DynamicAmount.XValue` reads the X just paid) and enforced
-     * cross-target against the summed `manaValue` of the chosen cards by both `TargetValidator`
-     * (authoritative) and the interactive `DecisionValidators` (which sees the resolved integer
-     * cap baked into the decision). Pair with `unlimited = true` for the "any number … with total
-     * mana value N or less" shape. `null` (the default) imposes no aggregate cap. Distinct from
-     * `dynamicMaxCount`, which caps the *count* of targets, not their summed mana value.
+     * When non-null, the chosen targets for this requirement must have a **combined value of one
+     * numeric property no greater than an amount** — "any number of target creature cards with
+     * total mana value X or less" (Fire Lord Sozin), "… with total power 10 or less" (Nethroi, Apex
+     * of Death). See [TotalCap]. `null` (the default) imposes no aggregate cap. Distinct from
+     * `dynamicMaxCount`, which caps the *count* of targets, not their summed values.
      */
-    val totalManaValueAtMost: DynamicAmount? = null,
+    val totalAtMost: TotalCap? = null,
     /**
      * When true and more than one target is chosen for this requirement, every chosen target must
      * have a **different name** from the others — "up to six target creature cards with different
@@ -636,11 +681,7 @@ data class TargetObject(
         }
         val numericQualified = sameNumericProperty?.let { "$qualified with equal ${it.description}" }
             ?: differentNumericProperty?.let { "$qualified with different ${it.pluralDescription}" } ?: qualified
-        if (totalManaValueAtMost != null) {
-            "$numericQualified with total mana value ${totalManaValueAtMost.description} or less"
-        } else {
-            numericQualified
-        }
+        totalAtMost?.let { "$numericQualified with ${it.description}" } ?: numericQualified
     }
 
     override fun applyTextReplacement(replacer: TextReplacer): TargetRequirement {
@@ -698,6 +739,8 @@ data class TargetOther(
     override val optional: Boolean = baseRequirement.optional
     override val unlimited: Boolean = baseRequirement.unlimited
     override val chooser: TargetChooser = baseRequirement.chooser
+    override val dynamicMaxCount: DynamicAmount? get() = baseRequirement.dynamicMaxCount
+    override val dynamicMinCount: DynamicAmount? get() = baseRequirement.dynamicMinCount
     override val effectiveMinCount: Int get() = baseRequirement.effectiveMinCount
 
     override fun applyTextReplacement(replacer: TextReplacer): TargetRequirement {
